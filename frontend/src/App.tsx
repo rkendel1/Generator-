@@ -1,23 +1,27 @@
-import React, { useState } from 'react'
-import RepoList from './components/RepoList'
-import IdeaList from './components/IdeaList'
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Index from "./pages/Index";
+import NotFound from "./pages/NotFound";
 
-export default function App() {
-  const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null)
+const queryClient = new QueryClient();
 
-  return (
-    <div style={{ display: 'flex', padding: '1rem' }}>
-      <div style={{ width: '40%', paddingRight: '1rem' }}>
-        <h2>📦 Trending Repos</h2>
-        <RepoList onSelect={(id) => setSelectedRepoId(id)} />
-      </div>
-      <div style={{ width: '60%' }}>
-        {selectedRepoId ? (
-          <IdeaList repoId={selectedRepoId} />
-        ) : (
-          <p>Select a repo to see ideas</p>
-        )}
-      </div>
-    </div>
-  )
-}
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Index />} />
+          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+export default App;

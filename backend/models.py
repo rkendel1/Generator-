@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, Foreign
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 import uuid
-from .database import Base
+from database import Base
 
 def gen_uuid(): return str(uuid.uuid4())
 

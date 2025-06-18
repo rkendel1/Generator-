@@ -1,5 +1,5 @@
 IDEA_PROMPT = """
-You’re a visionary technologist and problem solver. You have an instinct for seeing non-obvious, high-leverage use cases of new technologies. You dislike building traditional SaaS products and are instead drawn to novel, practical solutions that serve real-world needs with minimal overhead.
+You're a visionary technologist and problem solver. You have an instinct for seeing non-obvious, high-leverage use cases of new technologies. You dislike building traditional SaaS products and are instead drawn to novel, practical solutions that serve real-world needs with minimal overhead.
 
 I will give you a summary of a trending GitHub repository.
 
@@ -9,7 +9,7 @@ Each pitch should follow this format (based on the image below):
 
 	1. Hook – Open strong to get attention.
 	2. Value – What does the solution actually do?
-	3. Evidence – A brief insight or statistic to support credibility (based on actual studies- don’t make anything up - provide the reference)
+	3. Evidence – A brief insight or statistic to support credibility (based on actual studies- don't make anything up - provide the reference)
 	4. Differentiator – Why this solution is different or better.
 	5. Call to Action – What would you say to a decision-maker to move forward?
 
@@ -21,13 +21,38 @@ After each idea, add:
 Constraints:
 
 	• Be wildly creative, but grounded in technical reality.
-	• Avoid anything that looks like “just another SaaS.”
+	• Avoid anything that looks like "just another SaaS."
 	• Ideas should be able to start lean, without massive infra.
 
+---
+
+Return your response as a JSON array of objects, each with the following fields:
+- title (string)
+- hook (string)
+- value (string)
+- evidence (string)
+- differentiator (string)
+- call_to_action (string)
+- score (integer, 1-10)
+- mvp_effort (integer, 1-10)
+
+Example:
+[
+  {
+    "title": "AI-powered Museum Curation",
+    "hook": "Imagine a museum where exhibits come alive...",
+    "value": "RAGFlow can analyze historical documents...",
+    "evidence": "According to a study by the Pew Research Center...",
+    "differentiator": "RAGFlow's deep document understanding...",
+    "call_to_action": "Partner with us to revolutionize museum experiences...",
+    "score": 8,
+    "mvp_effort": 6
+  }
+]
 """
 
 DEEP_DIVE_PROMPT = """
-You are a founder-operator and strategic investor combined — part hacker, part realist. I’m going to give you one idea from a previous brainstorm. Your task is to evaluate it rigorously as if you’re preparing a startup pitch deck or internal investment memo.
+You are a founder-operator and strategic investor combined — part hacker, part realist. I'm going to give you one idea from a previous brainstorm. Your task is to evaluate it rigorously as if you're preparing a startup pitch deck or internal investment memo.
 
 You must answer the following investor-grade deep dive questions clearly and thoroughly:
 
@@ -36,7 +61,7 @@ You must answer the following investor-grade deep dive questions clearly and tho
 🚀 Product Clarity & MVP
 
 	• What is the Minimum Viable Product (MVP)?
-	• What’s the fastest path to validating product-market fit?
+	• What's the fastest path to validating product-market fit?
 	• What are the essential features to test core value?
 	• How would you implement the MVP (tech stack, workflow, setup)?
 	• Effort level: Time and skill estimate for MVP (scale: 1–10)
@@ -62,7 +87,7 @@ You must answer the following investor-grade deep dive questions clearly and tho
 
 🧠 Strategic Moat / IP / Differentiator
 
-	• What’s novel or hard to copy here?
+	• What's novel or hard to copy here?
 	• Any defensible IP or network effect?
 	• Is there a strategic wedge to expand later?
 
@@ -70,11 +95,11 @@ You must answer the following investor-grade deep dive questions clearly and tho
 
 💼 Business + Funding Snapshot
 
-	• What’s the ask if pitching an angel/seed investor? (amount, duration)
+	• What's the ask if pitching an angel/seed investor? (amount, duration)
 	• What would you spend the first 6 months of funding on?
 	• Who are the main competitors, and how is this better/different?
 	• What is a realistic exit strategy? (acquisition targets, multiples, timing)
-	• Any traction channels or early adopters you’d pursue?
+	• Any traction channels or early adopters you'd pursue?
 
 
 
@@ -84,7 +109,7 @@ Now score the idea across key dimensions investors care about (1–10):
 Signal	Score (1–10)
 Product-Market Fit Potential	
 Market Size & Timing	
-Founder’s Ability to Execute	
+Founder's Ability to Execute	
 Technical Feasibility	
 Competitive Moat	
 Profitability Potential	

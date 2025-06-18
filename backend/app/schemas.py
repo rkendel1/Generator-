@@ -1,14 +1,35 @@
 # backend/app/schemas.py
 
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
+from datetime import datetime
 
 class RepoOut(BaseModel):
-    id: int
+    id: str
     name: str
     url: str
-    description: str
-    language: str
-    trending_period: str
+    summary: Optional[str] = None
+    language: Optional[str] = None
+    created_at: Optional[datetime] = None
+    trending_period: str = "daily"
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+class IdeaOut(BaseModel):
+    id: str
+    repo_id: str
+    title: str
+    hook: Optional[str] = None
+    value: Optional[str] = None
+    evidence: Optional[str] = None
+    differentiator: Optional[str] = None
+    call_to_action: Optional[str] = None
+    deep_dive: Optional[Dict[str, Any]] = None
+    score: Optional[int] = None
+    mvp_effort: Optional[int] = None
+    deep_dive_requested: bool = False
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

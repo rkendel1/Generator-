@@ -1,7 +1,21 @@
-FROM node:18-alpine
+# Use Node.js 20 with platform forcing
+FROM --platform=linux/amd64 node:20-alpine
+
+# Install dependencies
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
 COPY . .
-RUN yarn build
-CMD ["npx", "serve", "-s", "build", "-l", "3000"]
+
+# Expose port
+EXPOSE 8081
+
+# Start development server
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "8081"] 

@@ -1,21 +1,25 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from ..crud import get_or_create_repo
-from ..database import AsyncSessionLocal
-import httpx
+from sqlalchemy.orm import Session
+from app.db import get_db
+from crud import get_or_create_repo
+from app.services.github import fetch_trending
+import asyncio
 
 router = APIRouter()
 
-def get_db():
-    db=AsyncSessionLocal(); yield db; await db.close()
-
 @router.post("/fetch-trending")
-async def fetch_trending(db: AsyncSession = Depends(get_db)):
-    langs = ["Python","JavaScript","TypeScript","React"]
-    async with httpx.AsyncClient() as client:
-        repos = ... # scrape GitHub trending API
-    count=0
-    for r in repos:
-        await get_or_create_repo(db, r); count+=1
-    await db.commit()
+async def fetch_trending_endpoint(db: Session = Depends(get_db)):
+    langs = ["Python", "JavaScript", "TypeScript", "React"]
+    count = 0
+    
+    for lang in langs:
+        try:
+            repos = await fetch_trending(lang, "daily")
+            for repo_data in repos:
+                get_or_create_repo(db, repo_data)
+                count += 1
+        except Exception as e:
+            print(f"Error fetching {lang}: {e}")
+    
+    db.commit()
     return {"imported": count}
