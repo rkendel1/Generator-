@@ -15,6 +15,7 @@ class Repo(Base):
     language = Column(String, index=True)
     created_at = Column(DateTime, server_default=func.now())
     ideas = relationship("Idea", back_populates="repo")
+    trending_period = Column(String, default="daily")  # 'daily', 'weekly', 'monthly'
 
 class Idea(Base):
     __tablename__ = "ideas"
