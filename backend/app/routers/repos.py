@@ -11,6 +11,10 @@ from app.utils import save_repos
 
 router = APIRouter(prefix="/repos", tags=["repos"])
 
+
+@router.get("/")  # becomes GET /repos/
+@router.post("/load")  # becomes POST /repos/load
+
 @router.get("/", response_model=List[RepoOut])
 def list_repos(
     period: str = Query("daily", enum=["daily", "weekly", "monthly"]),
