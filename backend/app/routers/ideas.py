@@ -1,9 +1,11 @@
-from crud import get_ideas_for_repo, request_deep_dive, save_deep_dive, add_to_shortlist, remove_from_shortlist, get_shortlist_ideas, create_deep_dive_version, get_deep_dive_versions, get_deep_dive_version, restore_deep_dive_version
+from crud import get_ideas_for_repo, request_deep_dive, save_deep_dive, add_to_shortlist, remove_from_shortlist, get_shortlist_ideas, create_deep_dive_version, get_deep_dive_versions, get_deep_dive_version, restore_deep_dive_version, update_idea_status
 from app.schemas import IdeaOut, ShortlistOut, DeepDiveVersionOut
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from llm import generate_deep_dive
+from app.db import get_db
+from models import Idea
 
 router = APIRouter()
 
@@ -79,4 +81,64 @@ def delete_deep_dive_version_api(idea_id: str, version_number: int, db: Session 
         raise HTTPException(status_code=404, detail="Version not found")
     db.delete(version)
     db.commit()
-    return {"status": "deleted"} 
+    return {"status": "deleted"}
+
+@router.post("/{idea_id}/status", response_model=IdeaOut)
+def update_status_api(idea_id: str, status: str = Body(...), db: Session = Depends(get_db)):
+    try:
+        updated_idea = update_idea_status(db, idea_id, status)
+        return updated_idea
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.get("/all", response_model=List[IdeaOut])
+def get_all_ideas(db: Session = Depends(get_db)):
+    """Get all ideas from all repos and manual generation"""
+    try:
+        ideas = db.query(Idea).order_by(Idea.created_at.desc()).all()
+        return ideas
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch ideas: {str(e)}")
+
+@router.post("/generate", response_model=dict)
+async def generate_adhoc_ideas(
+    industry: str = Body(...),
+    business_model: str = Body(...),
+    context: str = Body(""),
+    db: Session = Depends(get_db)
+):
+    from app.services.pitch_generation import RANDY_RESUME
+    from llm import generate_idea_pitches
+    
+    # Build context similar to repo-based generation
+    custom_context = f"Industry: {industry}\nBusiness Model: {business_model}\nContext: {context}\n"
+    
+    # Use the centralized idea generation service
+    result = await generate_idea_pitches(custom_context, user_skills=RANDY_RESUME)
+    
+    ideas = []
+    for idea in result.get('ideas', []):
+        # Skip error ideas
+        if 'error' in idea:
+            continue
+            
+        db_idea = Idea(
+            repo_id=None,  # Manual ideas don't have a repo
+            title=idea.get("title", ""),
+            hook=idea.get("hook", ""),
+            value=idea.get("value", ""),
+            evidence=idea.get("evidence", ""),
+            differentiator=idea.get("differentiator", ""),
+            call_to_action=idea.get("call_to_action", ""),
+            score=idea.get("score"),
+            mvp_effort=idea.get("mvp_effort"),
+            status="suggested",
+            llm_raw_response=result.get('raw')
+        )
+        db.add(db_idea)
+        db.commit()
+        db.refresh(db_idea)
+        ideas.append(db_idea)
+    
+    from app.schemas import IdeaOut
+    return {"ideas": [IdeaOut.model_validate(i) for i in ideas]} 

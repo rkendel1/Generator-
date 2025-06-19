@@ -1,20 +1,31 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Star, Lightbulb, Target, TrendingUp, Users, ArrowRight, StickyNote, Save, Edit3, Rocket, Clock, Brain, Briefcase, BarChart } from 'lucide-react';
 import { IdeaCard } from "./IdeaCard";
-import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion } from "../lib/api";
+import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion, fetchIdeas, updateIdeaStatus, getAllIdeas } from "../lib/api";
+import type { IdeaStatus } from '../lib/api';
+
+const LIFECYCLE_STAGES: { key: string; label: string }[] = [
+  { key: 'suggested', label: 'Suggested' },
+  { key: 'deep_dive', label: 'Deep Dive' },
+  { key: 'iterating', label: 'Iterating' },
+  { key: 'considering', label: 'Considering' },
+  { key: 'closed', label: 'Closed' },
+];
 
 interface IdeaWorkspaceProps {
-  ideas: any[];
-  selectedRepo: any;
-  pollingDeepDiveId?: string | null;
-  onIdeasRefetch?: () => void;
+  repoId?: string; // Make optional to support showing all ideas
+  showAllIdeas?: boolean; // New prop to show all ideas instead of just repo ideas
 }
 
-export const IdeaWorkspace = ({ ideas, selectedRepo, pollingDeepDiveId, onIdeasRefetch }: IdeaWorkspaceProps) => {
+export function IdeaWorkspace({ repoId, showAllIdeas = false }: IdeaWorkspaceProps) {
+  const [ideas, setIdeas] = useState<any[]>([]);
+  const [activeStage, setActiveStage] = useState<string>('suggested');
+  const [loading, setLoading] = useState(false);
+
   const [ideaNotes, setIdeaNotes] = useState<{[key: number]: string}>({});
   const [editingNotes, setEditingNotes] = useState<{[key: number]: boolean}>({});
 
@@ -26,6 +37,30 @@ export const IdeaWorkspace = ({ ideas, selectedRepo, pollingDeepDiveId, onIdeasR
   const [versionHistory, setVersionHistory] = useState<{[ideaId: string]: any[]}>({});
   const [showVersionHistory, setShowVersionHistory] = useState<string | null>(null);
   const [versionLoading, setVersionLoading] = useState(false);
+
+  useEffect(() => {
+    if (showAllIdeas) {
+      // Fetch all ideas from all repos
+      setLoading(true);
+      getAllIdeas()
+        .then(setIdeas)
+        .catch(error => {
+          console.error('Error fetching all ideas:', error);
+          setIdeas([]);
+        })
+        .finally(() => setLoading(false));
+    } else if (repoId) {
+      // Fetch ideas for specific repo
+      setLoading(true);
+      fetchIdeas(repoId)
+        .then(setIdeas)
+        .catch(error => {
+          console.error('Error fetching repo ideas:', error);
+          setIdeas([]);
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [repoId, showAllIdeas]);
 
   useEffect(() => {
     const fetchShortlist = async () => {
@@ -83,7 +118,14 @@ export const IdeaWorkspace = ({ ideas, selectedRepo, pollingDeepDiveId, onIdeasR
     setVersionLoading(false);
     const versions = await getDeepDiveVersions(idea.id);
     setVersionHistory(prev => ({ ...prev, [idea.id]: versions }));
-    if (onIdeasRefetch) onIdeasRefetch();
+    // Refresh ideas after saving
+    if (showAllIdeas) {
+      const allIdeas = await getAllIdeas();
+      setIdeas(allIdeas);
+    } else if (repoId) {
+      const repoIdeas = await fetchIdeas(repoId);
+      setIdeas(repoIdeas);
+    }
     if (rerun) {
       window.location.reload();
     }
@@ -102,7 +144,14 @@ export const IdeaWorkspace = ({ ideas, selectedRepo, pollingDeepDiveId, onIdeasR
     await restoreDeepDiveVersion(ideaId, versionNumber);
     setVersionLoading(false);
     setShowVersionHistory(null);
-    if (onIdeasRefetch) onIdeasRefetch();
+    // Refresh ideas after restoring
+    if (showAllIdeas) {
+      const allIdeas = await getAllIdeas();
+      setIdeas(allIdeas);
+    } else if (repoId) {
+      const repoIdeas = await fetchIdeas(repoId);
+      setIdeas(repoIdeas);
+    }
     window.location.reload();
   };
 
@@ -111,247 +160,146 @@ export const IdeaWorkspace = ({ ideas, selectedRepo, pollingDeepDiveId, onIdeasR
     alert(`Delete version ${versionNumber} for idea ${ideaId} (not yet implemented)`);
   };
 
-  // Remove shortlist section and filter ideas to only those with a requested deep dive or a deep dive exists
-  const filteredIdeas = ideas.filter(
-    (idea) => idea.deep_dive_requested || (idea.deep_dive && Object.keys(idea.deep_dive).length > 0) || idea.deep_dive_raw_response
-  );
-
-  if (!selectedRepo) {
-    return (
-      <Card className="p-12 text-center">
-        <Lightbulb className="w-16 h-16 mx-auto mb-4 text-slate-400" />
-        <h3 className="text-xl font-semibold mb-2">Select a Repository</h3>
-        <p className="text-slate-600">Choose a trending repository to explore business ideas</p>
-      </Card>
-    );
-  }
-
-  if (!filteredIdeas || filteredIdeas.length === 0) {
-    return (
-      <Card className="p-12 text-center">
-        <Lightbulb className="w-16 h-16 mx-auto mb-4 text-slate-400" />
-        <h3 className="text-xl font-semibold mb-2">No Deep Dives Yet</h3>
-        <p className="text-slate-600">No deep dives yet. Request one from the repos page.</p>
-      </Card>
-    );
-  }
+  const handleStatusChange = async (id: string, newStatus: IdeaStatus) => {
+    try {
+      const updated = await updateIdeaStatus(id, newStatus);
+      setIdeas(prev =>
+        prev.map(idea => (idea.id === id ? { ...idea, status: updated.status } : idea))
+      );
+    } catch (err) {
+      alert('Failed to update status');
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Main Ideas List - only those with requested deep dives */}
-      <div className="grid gap-6">
-        {filteredIdeas.map((idea, index) => (
-          <Card key={index} className="transition-all duration-300 hover:shadow-lg">
-            <CardHeader className="pb-4">
-              <div className="flex items-start justify-between mb-2">
-                <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                    #{index + 1}
-                  </span>
-                  {idea.title}
-                </CardTitle>
-                <div className="flex gap-2">
-                  <Badge className={getScoreColor(idea.score)}>
-                    Score: {idea.score}/10
-                  </Badge>
-                  <Badge className="text-slate-600">
-                    Effort: {idea.effort}/10
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <Lightbulb className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm text-slate-700">Hook:</span>
-                      <p className="text-sm text-slate-600 mt-1">{idea.hook}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Target className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm text-slate-700">Value:</span>
-                      <p className="text-sm text-slate-600 mt-1">{idea.value}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm text-slate-700">Evidence:</span>
-                      <p className="text-sm text-slate-600 mt-1">{idea.evidence}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Users className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm text-slate-700">Differentiator:</span>
-                      <p className="text-sm text-slate-600 mt-1">{idea.differentiator}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <ArrowRight className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm text-slate-700">Call to Action:</span>
-                      <p className="text-sm text-slate-600 mt-1">{idea.callToAction}</p>
-                    </div>
-                  </div>
-                  <div className="border-t pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <StickyNote className="w-4 h-4 text-yellow-500" />
-                      <Button 
-                        onClick={() => setEditingNotes(prev => ({ ...prev, [index]: !prev[index] }))}
-                      >
-                        <Edit3 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    {editingNotes[index] ? (
-                      <div className="space-y-2">
-                        <Textarea 
-                          placeholder="Add your notes, thoughts, or action items for this idea..."
-                          value={ideaNotes[index] || ''}
-                          onChange={(e) => setIdeaNotes(prev => ({ ...prev, [index]: e.target.value }))}
-                          className="min-h-[100px]"
-                        />
-                        <div className="flex gap-2">
-                          <Button 
-                            onClick={() => handleNoteSave(index, ideaNotes[index] || '')}
-                          >
-                            <Save className="w-3 h-3 mr-1" />
-                            Save
-                          </Button>
-                          <Button 
-                            onClick={() => setEditingNotes(prev => ({ ...prev, [index]: false }))}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded p-3 min-h-[60px]">
-                        {ideaNotes[index] ? (
-                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{ideaNotes[index]}</p>
-                        ) : (
-                          <p className="text-sm text-slate-500 italic">Click edit to add your notes...</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {/* Compact Deep Dive Section */}
-              {(!idea.deep_dive && !idea.deep_dive_raw_response) ? (
-                <div className="mt-4 text-sm text-slate-500 italic">
-                  No deep dive yet. Request it from the repos page.
-                </div>
-              ) : (
-                <div className="mt-4 border rounded bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Brain className="w-4 h-4 text-purple-500" />
-                    <span className="font-semibold text-base">Deep Dive</span>
-                    <button
-                      className="ml-2 px-2 py-1 rounded bg-gray-200 text-xs font-semibold hover:bg-gray-300"
-                      onClick={() => showVersionHistory === idea.id ? setShowVersionHistory(null) : handleShowVersionHistory(idea.id)}
-                    >
-                      {showVersionHistory === idea.id ? 'Hide History' : 'History ▼'}
-                    </button>
-                  </div>
-                  {/* Inline Version History Dropdown */}
-                  {showVersionHistory === idea.id && (
-                    <div className="mb-2">
-                      {versionLoading ? <div>Loading...</div> : (
-                        <ul className="space-y-1">
-                          {(versionHistory[idea.id] || []).map((v: any) => (
-                            <li key={v.version_number} className="border rounded p-2 flex items-center justify-between">
-                              <span>V{v.version_number} ({new Date(v.created_at).toLocaleString()})</span>
-                              <div className="flex gap-2">
-                                <button
-                                  className="px-2 py-1 rounded bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600"
-                                  onClick={() => handleRestoreVersion(idea.id, v.version_number)}
-                                >
-                                  Restore
-                                </button>
-                                <button
-                                  className="px-2 py-1 rounded bg-red-500 text-white text-xs font-semibold hover:bg-red-600"
-                                  onClick={() => handleDeleteVersion(idea.id, v.version_number)}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                  {/* Deep Dive Fields Grid */}
-                  {(!idea.deep_dive || Object.keys(idea.deep_dive).length === 0) ? (
-                    <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-2">
-                      <strong>LLM Parsing Error:</strong> The LLM response could not be parsed into a deep dive.
-                      <details className="mt-2">
-                        <summary className="cursor-pointer text-xs underline">Show Raw LLM Response</summary>
-                        <pre className="bg-slate-100 text-xs p-2 rounded overflow-x-auto max-h-40 whitespace-pre-wrap mt-2">{idea.deep_dive_raw_response || 'No raw response available.'}</pre>
-                      </details>
-                    </div>
-                  ) : (
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><Rocket className="w-4 h-4 text-blue-500" /> Product Clarity & MVP</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.product_clarity || 'No data available.'}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><Clock className="w-4 h-4 text-orange-500" /> Timing / Why Now</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.timing || 'No data available.'}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-green-500" /> Market Opportunity</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.market_opportunity || 'No data available.'}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><Brain className="w-4 h-4 text-purple-500" /> Strategic Moat / IP / Differentiator</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.strategic_moat || 'No data available.'}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><Briefcase className="w-4 h-4 text-blue-600" /> Business + Funding Snapshot</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.business_funding || 'No data available.'}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2"><BarChart className="w-4 h-4 text-indigo-500" /> Investor Scoring Model</h5>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{idea.deep_dive.investor_scoring || 'No data available.'}</p>
-                      </div>
-                      <div className="md:col-span-2">
-                        <h5 className="font-semibold text-sm mb-1 flex items-center gap-2">Executive Summary</h5>
-                        <p className="text-sm leading-relaxed whitespace-pre-line">{idea.deep_dive.summary || 'No summary available.'}</p>
-                      </div>
-                    </div>
-                  )}
-                  {/* Save Buttons */}
-                  <div className="flex gap-2 mt-4 justify-end">
-                    <Button
-                      className="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700"
-                      onClick={() => handleSaveAndRerun(idea, false)}
-                      disabled={versionLoading}
-                    >
-                      {versionLoading ? 'Saving...' : 'Save'}
-                    </Button>
-                    <Button
-                      className="px-4 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"
-                      onClick={() => handleSaveAndRerun(idea, true)}
-                      disabled={versionLoading}
-                    >
-                      {versionLoading ? 'Saving...' : 'Save & Rerun'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      <div className="flex mb-4">
+        {LIFECYCLE_STAGES.map(stage => (
+          <button
+            key={stage.key}
+            className={`px-4 py-2 mr-2 rounded ${activeStage === stage.key ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+            onClick={() => setActiveStage(stage.key)}
+          >
+            {stage.label}
+          </button>
         ))}
       </div>
+      {loading ? (
+        <div>Loading ideas...</div>
+      ) : (
+        <div>
+          {!ideas || ideas.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              No ideas found for {activeStage} stage.
+            </div>
+          ) : (
+            (ideas || [])
+              .filter(idea => {
+                try {
+                  return idea && idea.status === activeStage;
+                } catch (error) {
+                  console.error('Error filtering idea:', error, idea);
+                  return false;
+                }
+              })
+              .map((idea, index) => {
+                try {
+                  return (
+                    <Card key={idea?.id || index} className="transition-all duration-300 hover:shadow-lg mb-4">
+                      <CardHeader className="pb-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                              #{index + 1}
+                            </span>
+                            {idea?.title || 'Untitled Idea'}
+                          </CardTitle>
+                          <div className="flex gap-2">
+                            <Badge className={getScoreColor(idea?.score || 5)}>
+                              Score: {idea?.score || 5}/10
+                            </Badge>
+                            <Badge className="text-slate-600">
+                              Effort: {idea?.mvp_effort || 5}/10
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-2">
+                              <Lightbulb className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-medium text-sm text-slate-700">Hook:</span>
+                                <p className="text-sm text-slate-600 mt-1">{idea?.hook || 'No hook available'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <Target className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-medium text-sm text-slate-700">Value:</span>
+                                <p className="text-sm text-slate-600 mt-1">{idea?.value || 'No value available'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <TrendingUp className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-medium text-sm text-slate-700">Evidence:</span>
+                                <p className="text-sm text-slate-600 mt-1">{idea?.evidence || 'No evidence available'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <Users className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-medium text-sm text-slate-700">Differentiator:</span>
+                                <p className="text-sm text-slate-600 mt-1">{idea?.differentiator || 'No differentiator available'}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-2">
+                              <ArrowRight className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-medium text-sm text-slate-700">Call to Action:</span>
+                                <p className="text-sm text-slate-600 mt-1">{idea?.call_to_action || 'No call to action available'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Status Management */}
+                        <div className="border-t pt-4">
+                          <span className="font-medium text-sm text-slate-700">Status:</span>
+                          <select
+                            value={idea?.status || 'suggested'}
+                            onChange={e => handleStatusChange(idea?.id, e.target.value as IdeaStatus)}
+                            className="ml-4 border rounded px-2 py-1"
+                          >
+                            {LIFECYCLE_STAGES.map(opt => (
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                } catch (error) {
+                  console.error('Error rendering idea:', error, idea);
+                  return (
+                    <Card key={`error-${index}`} className="mb-4 border-red-200 bg-red-50">
+                      <CardContent className="p-4">
+                        <p className="text-red-600">Error rendering idea: {error.message}</p>
+                        <pre className="text-xs mt-2 bg-red-100 p-2 rounded overflow-auto">
+                          {JSON.stringify(idea, null, 2)}
+                        </pre>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+              })
+          )}
+        </div>
+      )}
     </div>
   );
-};
+}

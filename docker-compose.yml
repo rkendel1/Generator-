@@ -20,6 +20,11 @@ services:
   backend:
     build:
       context: ./backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
+      - GROQ_API_KEY_1=
+      - GROQ_API_KEY_2=
+      - GROQ_API_KEY_3=
     ports:
       - "8000:8000"
     depends_on:
@@ -37,6 +42,8 @@ services:
       context: ./frontend
     ports:
       - "8081:8081"
+    environment:
+      - VITE_API_URL=http://localhost:8000
     depends_on:
       backend:
         condition: service_healthy
@@ -51,6 +58,11 @@ services:
     build:
       context: ./backend
     command: ["python", "cron/nightly_runner.py"]
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
+      - GROQ_API_KEY_1=
+      - GROQ_API_KEY_2=
+      - GROQ_API_KEY_3=
     depends_on:
       db:
         condition: service_healthy

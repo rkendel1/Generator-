@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, ForeignKey, func, Enum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 import uuid
@@ -20,7 +20,7 @@ class Repo(Base):
 class Idea(Base):
     __tablename__ = "ideas"
     id = Column(String, primary_key=True, default=gen_uuid)
-    repo_id = Column(String, ForeignKey("repos.id"), nullable=False)
+    repo_id = Column(String, ForeignKey("repos.id"), nullable=True)  # Allow NULL for manual ideas
     title = Column(String, nullable=False)
     hook = Column(Text)
     value = Column(Text)
@@ -35,6 +35,7 @@ class Idea(Base):
     repo = relationship("Repo", back_populates="ideas")
     llm_raw_response = Column(Text)  # Raw LLM response for idea generation
     deep_dive_raw_response = Column(Text)  # Raw LLM response for deep dive
+    status = Column(Enum('suggested', 'deep_dive', 'iterating', 'considering', 'closed', name='idea_status'), default='suggested', nullable=False)
 
 class Shortlist(Base):
     __tablename__ = "shortlists"

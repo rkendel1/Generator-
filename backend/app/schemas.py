@@ -1,7 +1,7 @@
 # backend/app/schemas.py
 
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from datetime import datetime
 
 class RepoOut(BaseModel):
@@ -18,7 +18,7 @@ class RepoOut(BaseModel):
 
 class IdeaOut(BaseModel):
     id: str
-    repo_id: str
+    repo_id: Optional[str] = None
     title: str
     hook: Optional[str] = None
     value: Optional[str] = None
@@ -32,6 +32,7 @@ class IdeaOut(BaseModel):
     created_at: Optional[datetime] = None
     llm_raw_response: Optional[str] = None
     deep_dive_raw_response: Optional[str] = None
+    status: Literal['suggested', 'deep_dive', 'iterating', 'considering', 'closed']
 
     class Config:
         from_attributes = True

@@ -173,3 +173,13 @@ def restore_deep_dive_version(db: Session, idea_id: str, version_number: int):
     idea.deep_dive_raw_response = version.llm_raw_response
     db.commit()
     return idea
+
+def update_idea_status(db: Session, idea_id: str, new_status: str):
+    """Update the status of an idea."""
+    idea = db.query(Idea).filter(Idea.id == idea_id).first()
+    if not idea:
+        raise ValueError(f"Idea with ID {idea_id} not found")
+    idea.status = new_status
+    db.commit()
+    db.refresh(idea)
+    return idea

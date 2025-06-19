@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
@@ -32,6 +32,8 @@ export interface Repo {
   watchers_count?: number;
 }
 
+export type IdeaStatus = 'suggested' | 'deep_dive' | 'iterating' | 'considering' | 'closed';
+
 export interface Idea {
   id: string;
   repo_id: string;
@@ -48,6 +50,7 @@ export interface Idea {
   created_at?: string;
   llm_raw_response?: string;
   deep_dive_raw_response?: string;
+  status: IdeaStatus;
 }
 
 export interface DeepDive {
@@ -194,6 +197,16 @@ export const restoreDeepDiveVersion = async (ideaId: string, versionNumber: numb
   }
 };
 
+export const getAllIdeas = async () => {
+  try {
+    const response = await api.get('/ideas/all');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching all ideas:', error);
+    throw error;
+  }
+};
+
 // Data transformation functions to match frontend expectations
 export const transformRepo = (repo: Repo) => ({
   id: repo.id,
@@ -227,4 +240,21 @@ export const transformIdea = (idea: Idea) => ({
   deep_dive_raw_response: idea.deep_dive_raw_response,
   isError: idea.title && idea.title.startsWith('[ERROR]'),
   needsNewDeepDive: !(idea.deep_dive && Object.keys(idea.deep_dive).length > 0) && !idea.deep_dive_raw_response,
-}); 
+  status: idea.status,
+});
+
+export async function fetchIdeas(repoId: string): Promise<Idea[]> {
+  const res = await fetch(`/api/ideas?repo_id=${repoId}`);
+  if (!res.ok) throw new Error('Failed to fetch ideas');
+  return res.json();
+}
+
+export async function updateIdeaStatus(id: string, status: IdeaStatus): Promise<Idea> {
+  const res = await fetch(`/api/ideas/${id}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error('Failed to update status');
+  return res.json();
+} 

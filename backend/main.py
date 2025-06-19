@@ -1,8 +1,8 @@
 # backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import repos
-from routers import ideas, admin
+from app.routers import repos, ideas as app_ideas
+from routers import admin, ideas as router_ideas
 from logging_config import setup_logging
 from error_handlers import setup_error_handlers
 
@@ -25,7 +25,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(repos.router)
-app.include_router(ideas.router, prefix="/ideas", tags=["ideas"])
+app.include_router(app_ideas.router, prefix="/ideas", tags=["ideas"])
+app.include_router(router_ideas.router, prefix="/ideas", tags=["ideas"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 @app.get("/")

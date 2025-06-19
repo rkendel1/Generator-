@@ -7,6 +7,71 @@ from app.services.github import fetch_trending
 
 LANGUAGES = ["Python", "TypeScript", "JavaScript"]
 
+RANDY_RESUME = '''
+Randy L. Kendel
+Warwick, Rhode Island 02886 | 401-484-2831 | randy@kendelconsulting.com | linkedin.com/in/rkendel/
+
+Product Innovator | Civic Tech Visionary | Startup Builder
+
+Passionate leader with proven success in creating data-driven products that solve real-world problems. Deeply focused on user engagement, scalable solutions, and empowering communities through technology and civic innovation.
+CORE SKILLS
+
+Product Management | MVP Development | User Research | Data Analytics
+Agile Development | Lean Methodology | Strategic Planning
+Civic Tech | Political Engagement Platforms | User Adoption Strategies
+Experimental Generative AI | Metrics Driven Optimization | Stakeholder Management
+Data-Driven Decision Making | Monetization | Pricing Strategy | Funnel Optimization
+Technical Proficiency | Business Process Optimization | Growth Experimentation
+PROFESSIONAL EXPERIENCE
+SUN LIFE FINANCIAL
+Associate Director Sr Project Manager | Remote                                                    July 2023 - Present
+Led strategic product and process optimization projects, focusing on improving customer experience and reducing operational costs to drive revenue growth.
+Delivered key product innovations, collaborating with cross-functional teams to improve market positioning and enhance customer engagement. 
+KUHMPEL INC
+Founder | Remote (Startup)                                                                                 February 2024 - Present
+Built a political engagement platform empowering constituents to share opinions and enabling officials to cast votes using hard data.
+Developed cohesive user funnels to drive adoption and maximize engagement across diverse political perspectives using innovative approaches including Machine Learning, Generative AI, Advanced Analytics, Gamification, etc.
+
+AMAZON WEB SERVICES (AWS)
+Product Manager - Technical | Remote                                                           August 2022 – June 2023
+Led the expansion of AWS's global eCommerce offerings, introducing new pricing strategies and market-entry mechanisms that optimized customer trust and conversions.
+Worked cross-functionally with marketing and engineering to streamline product architecture and improve user experience, leading to higher customer retention and revenue growth. 
+
+CVS HEALTH
+Sr Manager, Release Train Engineer | Woonsocket, RI                     October 2019 – August 2022
+Spearheaded the Digital Immunizations Program, leveraging data analytics and customer insights to optimize the user journey and improve overall engagement.
+Managed a $15M budget while driving initiatives aimed at improving digital tools and customer-facing services, optimizing for both UX and monetization. 
+
+Advisor Project - Program Management                                            August 2018 - September 2019
+Played a key role in CVS's acquisition of Aetna, leading integration efforts for innovative product initiatives that contributed to revenue growth and enhanced customer experience.
+Directed multi-million-dollar programs, aligning business growth strategies with product and customer-centric innovations to improve healthcare outcomes and increase customer retention.
+Navigated complex stakeholder management, technology integration, and compliance challenges, ensuring seamless product delivery and scalability, while optimizing the customer journey and improving business performance.
+
+FINTELLECT SOFTWARE INC
+Founder (Startup)                                                                                                January 2016 - March 2020
+Led product development for a SaaS offering focused on helping SMBs with customer engagement and reputation management, utilizing subscription and marketplace revenue models.
+Implemented data-driven features, including dynamic pricing and user-experience improvements, to increase customer retention and monetization. 
+
+KENDEL CONSULTING LLC
+Principal Consultant/Owner                                                                       January 2011 - January 2019
+Led product and program management initiatives, including digital transformation strategies and eCommerce optimization for clients in healthcare, retail, and financial services.
+
+
+ADDITIONAL EXPERIENCE
+Senior consulting and project management roles across industries including KPMG, Fidelity Investments, Dell, Blue Cross Blue Shield, CGI and the United States Air Force. Specialized in building customer-centric digital solutions and leading cross-functional teams in fast-paced environments. 
+
+CERTIFICATIONS
+
+Scaled Agile Framework (SAFe)
+Certified Scrum Master (CSM) 
+Release Train Engineer (RTE)
+Lean Portfolio Management (LPM) 
+SAFe Scrum Master (SSM)
+
+EDUCATION
+Bachelor of Science in Information and Computer Science (In Progress) | Park University
+'''
+
 async def run_nightly_pipeline():
     session = SessionLocal()
     try:
@@ -35,7 +100,7 @@ async def run_nightly_pipeline():
             for attempt in range(1, max_attempts + 1):
                 try:
                     print(f"    Attempt {attempt} to generate ideas...")
-                    result = await generate_idea_pitches(repo.summary)
+                    result = await generate_idea_pitches(repo.summary, user_skills=RANDY_RESUME)
                     raw_blob = result.get('raw')
                     ideas = result.get('ideas', [])
                     if ideas and isinstance(ideas, list) and any(i.get('title') for i in ideas):

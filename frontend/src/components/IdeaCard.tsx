@@ -3,13 +3,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Zap, Target, TrendingUp, Users, ArrowRight } from 'lucide-react';
+import React from 'react';
+import type { Idea, IdeaStatus } from '@/lib/api';
+
+const statusOptions: { value: IdeaStatus; label: string }[] = [
+  { value: 'suggested', label: 'Suggested' },
+  { value: 'deep_dive', label: 'Deep Dive' },
+  { value: 'iterating', label: 'Iterating' },
+  { value: 'considering', label: 'Considering' },
+  { value: 'closed', label: 'Closed' },
+];
 
 interface IdeaCardProps {
-  idea: any;
-  onDeepDive: (idea: any) => void;
+  idea: Idea;
+  onDeepDive: (idea: Idea) => void;
+  onStatusChange: (id: string, newStatus: IdeaStatus) => void;
 }
 
-export const IdeaCard = ({ idea, onDeepDive }: IdeaCardProps) => {
+export function IdeaCard({ idea, onDeepDive, onStatusChange }: IdeaCardProps) {
   const getEffortColor = (effort: number) => {
     if (effort <= 3) return 'bg-green-500';
     if (effort <= 6) return 'bg-yellow-500';
@@ -110,6 +121,18 @@ export const IdeaCard = ({ idea, onDeepDive }: IdeaCardProps) => {
           </Button>
         </div>
       </CardContent>
+      <div className="mt-4 border-t pt-4">
+        <span className="font-medium text-sm text-slate-700">Status:</span>
+        <select
+          value={idea.status}
+          onChange={e => onStatusChange(idea.id, e.target.value as IdeaStatus)}
+          className="ml-4 border rounded px-2 py-1"
+        >
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
     </Card>
   );
-};
+}

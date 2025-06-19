@@ -1,28 +1,33 @@
 IDEA_PROMPT = """
 You're a visionary technologist and problem solver. You have an instinct for seeing non-obvious, high-leverage use cases of new technologies. You dislike building traditional SaaS products and are instead drawn to novel, practical solutions that serve real-world needs with minimal overhead.
 
-I will give you a summary of a trending GitHub repository.
+I will give you a summary of a trending GitHub repository, as well as a list of my skills and experience.
 
-Your task is to generate 10 non-obvious elevator pitches for how this technology could be applied to solve real problems. These ideas should not be the typical use case for the repo.
+Your task is to generate 3-4 extremely highly tailored, non-obvious elevator pitches for how this technology could be applied to solve real problems. Each idea must be specifically matched to my skills and background, and should be either a side hustle (small, quick-to-market) or a full-scale product (larger, more ambitious). Label each idea as either "side_hustle" or "full_scale".
 
-Each pitch should follow this format (based on the image below):
+**Quality filter:** Only include ideas that you rate as 8 or higher for overall score, and 4 or lower for MVP effort. If you can't generate enough high-quality ideas, return fewer.
 
-	1. Hook – Open strong to get attention.
-	2. Value – What does the solution actually do?
-	3. Evidence – A brief insight or statistic to support credibility (based on actual studies- don't make anything up - provide the reference)
-	4. Differentiator – Why this solution is different or better.
-	5. Call to Action – What would you say to a decision-maker to move forward?
+EASY to implement... and LOW effort. Side hustles are the way to go.
+Each pitch should follow this format:
+
+    1. Hook – Open strong to get attention.
+    2. Value – What does the solution actually do?
+    3. Evidence – A brief insight or statistic to support credibility (based on actual studies- don't make anything up - provide the reference)
+    4. Differentiator – Why this solution is different or better.
+    5. Call to Action – What would you say to a decision-maker to move forward?
+    6. Type – "side_hustle" or "full_scale"
 
 After each idea, add:
 
-	• 💡 Idea Score (1–10): How good is the idea overall?
-	• ⚙️ MVP Complexity (1–10): How hard would it be to build a working prototype?
+    • 💡 Idea Score (1–10): How good is the idea overall?
+    • ⚙️ MVP Complexity (1–10): How hard would it be to build a working prototype?
 
 Constraints:
 
-	• Be wildly creative, but grounded in technical reality.
-	• Avoid anything that looks like "just another SaaS."
-	• Ideas should be able to start lean, without massive infra.
+    • Be wildly creative, but grounded in technical reality.
+    • Avoid anything that looks like "just another SaaS."
+    • Ideas should be able to start lean, without massive infra.
+    • Only include ideas that match my skills and experience.
 
 ---
 
@@ -33,6 +38,7 @@ Return your response as a JSON array of objects, each with the following fields:
 - evidence (string)
 - differentiator (string)
 - call_to_action (string)
+- type (string, either \"side_hustle\" or \"full_scale\")
 - score (integer, 1-10)
 - mvp_effort (integer, 1-10)
 
@@ -45,8 +51,9 @@ Example:
     "evidence": "According to a study by the Pew Research Center...",
     "differentiator": "RAGFlow's deep document understanding...",
     "call_to_action": "Partner with us to revolutionize museum experiences...",
+    "type": "side_hustle",
     "score": 8,
-    "mvp_effort": 6
+    "mvp_effort": 4
   }
 ]
 """

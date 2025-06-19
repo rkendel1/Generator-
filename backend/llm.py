@@ -286,9 +286,10 @@ def is_english(text: str) -> bool:
     ascii_chars = sum(1 for c in text if ord(c) < 128)
     return ascii_chars / max(1, len(text)) > 0.85
 
-async def generate_idea_pitches(repo_description: str) -> dict:
+async def generate_idea_pitches(repo_description: str, user_skills: str = None) -> dict:
     from prompts import IDEA_PROMPT
-    prompt = f"{IDEA_PROMPT}\n\nRepository Description: {repo_description}\n\nGenerate 10 ideas:"
+    skills_section = f"\n\nUser Skills and Experience:\n{user_skills}\n" if user_skills else ""
+    prompt = f"{IDEA_PROMPT}{skills_section}\n\nRepository Description: {repo_description}\n\nGenerate 10 ideas:"
     try:
         response = await call_groq(prompt)
         if response is None:

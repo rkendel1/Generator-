@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Star, GitFork, Eye, TrendingUp, Lightbulb, Target, Clock, DollarSign } from 'lucide-react';
+import { Star, GitFork, Eye, TrendingUp, Lightbulb, Target, Clock, DollarSign, Rocket } from 'lucide-react';
 import { RepoCard } from "@/components/RepoCard";
 import { IdeaWorkspace } from "@/components/IdeaWorkspace";
 import { Dashboard } from "@/components/Dashboard";
@@ -11,6 +11,7 @@ import { DateNavigation } from "@/components/DateNavigation";
 import { getRepos, getIdeas, triggerDeepDive, transformRepo, transformIdea } from "@/lib/api";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
+import { IdeaGenerator } from '@/components/IdeaGenerator';
 
 const Index = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -139,7 +140,7 @@ const Index = () => {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8">
+          <TabsList className="grid w-full grid-cols-4 mb-8">
             <TabsTrigger value="repos" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               Trending Repos
@@ -151,6 +152,10 @@ const Index = () => {
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <Target className="w-4 h-4" />
               Analytics Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="generator" className="flex items-center gap-2">
+              <Rocket className="w-4 h-4" />
+              Idea Generator
             </TabsTrigger>
           </TabsList>
 
@@ -178,18 +183,36 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="workspace" className="space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-slate-800">
+                {selectedRepo ? `Ideas for ${selectedRepo.name}` : 'All Ideas Workspace'}
+              </h2>
+              {selectedRepo ? (
+                <Button 
+                  onClick={() => setSelectedRepo(null)}
+                  className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50"
+                >
+                  <Lightbulb className="w-4 h-4" />
+                  Show All Ideas
+                </Button>
+              ) : (
+                <div className="text-sm text-slate-600">
+                  Showing all ideas from all repos and manual generation
+                </div>
+              )}
+            </div>
             <IdeaWorkspace 
-              ideas={repoIdeas}
-              selectedRepo={selectedRepo}
-              pollingDeepDiveId={pollingDeepDiveId}
-              onIdeasRefetch={() => {
-                if (selectedRepo) refetchIdeasForRepo(selectedRepo.id);
-              }}
+              repoId={selectedRepo?.id} 
+              showAllIdeas={!selectedRepo}
             />
           </TabsContent>
 
           <TabsContent value="dashboard">
             <Dashboard ideas={repoIdeas} selectedRepo={selectedRepo} />
+          </TabsContent>
+
+          <TabsContent value="generator">
+            <IdeaGenerator />
           </TabsContent>
         </Tabs>
       </div>
