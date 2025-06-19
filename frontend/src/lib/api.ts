@@ -27,6 +27,9 @@ export interface Repo {
   language?: string;
   created_at?: string;
   trending_period: string;
+  stargazers_count?: number;
+  forks_count?: number;
+  watchers_count?: number;
 }
 
 export interface Idea {
@@ -43,6 +46,8 @@ export interface Idea {
   mvp_effort?: number;
   deep_dive_requested: boolean;
   created_at?: string;
+  llm_raw_response?: string;
+  deep_dive_raw_response?: string;
 }
 
 export interface DeepDive {
@@ -109,29 +114,117 @@ export const getStats = async () => {
   }
 };
 
+export const getShortlist = async () => {
+  try {
+    const response = await api.get('/ideas/shortlist');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching shortlist:', error);
+    throw error;
+  }
+};
+
+export const addToShortlist = async (ideaId: string) => {
+  try {
+    const response = await api.post(`/ideas/${ideaId}/shortlist`);
+    return response.data;
+  } catch (error) {
+    console.error('Error adding to shortlist:', error);
+    throw error;
+  }
+};
+
+export const removeFromShortlist = async (ideaId: string) => {
+  try {
+    const response = await api.delete(`/ideas/${ideaId}/shortlist`);
+    return response.data;
+  } catch (error) {
+    console.error('Error removing from shortlist:', error);
+    throw error;
+  }
+};
+
+export const getDeepDiveVersions = async (ideaId: string) => {
+  try {
+    const response = await api.get(`/ideas/${ideaId}/deepdive_versions`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching deep dive versions:', error);
+    throw error;
+  }
+};
+
+export const createDeepDiveVersion = async (ideaId: string, fields: any, llm_raw_response: string, rerun_llm = false) => {
+  try {
+    const response = await api.post(`/ideas/${ideaId}/deepdive_versions`, { fields, llm_raw_response, rerun_llm });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating deep dive version:', error);
+    throw error;
+  }
+};
+
+export const deleteDeepDiveVersion = async (ideaId: string, versionNumber: number) => {
+  try {
+    const response = await api.delete(`/ideas/${ideaId}/deepdive_versions/${versionNumber}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting deep dive version:', error);
+    throw error;
+  }
+};
+
+export const getDeepDiveVersion = async (ideaId: string, versionNumber: number) => {
+  try {
+    const response = await api.get(`/ideas/${ideaId}/deepdive_versions/${versionNumber}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching deep dive version:', error);
+    throw error;
+  }
+};
+
+export const restoreDeepDiveVersion = async (ideaId: string, versionNumber: number) => {
+  try {
+    const response = await api.post(`/ideas/${ideaId}/deepdive_versions/${versionNumber}/restore`);
+    return response.data;
+  } catch (error) {
+    console.error('Error restoring deep dive version:', error);
+    throw error;
+  }
+};
+
 // Data transformation functions to match frontend expectations
 export const transformRepo = (repo: Repo) => ({
   id: repo.id,
   name: repo.name,
   description: repo.summary || '',
   language: repo.language || 'Unknown',
-  stargazers_count: 0, // Not available in backend
-  forks_count: 0, // Not available in backend
-  watchers_count: 0, // Not available in backend
-  created_at: repo.created_at || new Date().toISOString().split('T')[0]
+  url: repo.url || '',
+  stargazers_count: repo.stargazers_count || 0,
+  forks_count: repo.forks_count || 0,
+  watchers_count: repo.watchers_count || 0,
+  created_at: repo.created_at || new Date().toISOString().split('T')[0],
+  trending_period: repo.trending_period || 'daily',
 });
 
 export const transformIdea = (idea: Idea) => ({
-  title: idea.title,
-  score: idea.score || 5,
-  effort: idea.mvp_effort || 5,
+  id: idea.id,
+  repo_id: idea.repo_id,
+  title: idea.title || '',
+  score: idea.score ?? 5,
+  effort: idea.mvp_effort ?? 5,
   hook: idea.hook || '',
   value: idea.value || '',
   evidence: idea.evidence || '',
   differentiator: idea.differentiator || '',
   callToAction: idea.call_to_action || '',
   deepDiveGenerated: !!idea.deep_dive,
-  generatedAt: idea.created_at,
-  id: idea.id,
-  deep_dive: idea.deep_dive
+  deep_dive: idea.deep_dive,
+  deep_dive_requested: idea.deep_dive_requested,
+  created_at: idea.created_at,
+  llm_raw_response: idea.llm_raw_response,
+  deep_dive_raw_response: idea.deep_dive_raw_response,
+  isError: idea.title && idea.title.startsWith('[ERROR]'),
+  needsNewDeepDive: !(idea.deep_dive && Object.keys(idea.deep_dive).length > 0) && !idea.deep_dive_raw_response,
 }); 

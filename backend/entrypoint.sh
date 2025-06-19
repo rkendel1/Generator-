@@ -22,12 +22,12 @@ if [ $? -ne 0 ]; then
 fi
 
 # Seed database with sample data
-echo "🌱 Seeding database with sample data..."
-python scripts/seed_data.py
+# echo "🌱 Seeding database with sample data..."
+# python scripts/seed_data.py
 
-if [ $? -ne 0 ]; then
-    echo "⚠️ Warning: Failed to seed database, continuing anyway..."
-fi
+# if [ $? -ne 0 ]; then
+#     echo "⚠️ Warning: Failed to seed database, continuing anyway..."
+# fi
 
 # Start the application
 echo "🚀 Starting FastAPI application..."

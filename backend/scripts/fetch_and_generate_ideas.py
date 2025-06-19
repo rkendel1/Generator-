@@ -22,7 +22,9 @@ def main():
         print(f"✨ Generating ideas for {len(repos)} repos...")
         for repo in repos:
             print(f"  → Generating ideas for: {repo.name}")
-            ideas = asyncio.run(generate_idea_pitches(repo.summary))
+            result = asyncio.run(generate_idea_pitches(repo.summary))
+            raw_blob = result.get('raw')
+            ideas = result.get('ideas', [])
             for idea in ideas:
                 mvp_effort = idea.get("mvp_effort")
                 if not isinstance(mvp_effort, int):
@@ -40,6 +42,7 @@ def main():
                     call_to_action=idea.get("call_to_action", ""),
                     score=score,
                     mvp_effort=mvp_effort,
+                    llm_raw_response=raw_blob
                 ))
             session.commit()
             print(f"    ✔️ Ideas saved for: {repo.name}")

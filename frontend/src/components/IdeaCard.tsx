@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +55,12 @@ export const IdeaCard = ({ idea, onDeepDive }: IdeaCardProps) => {
       </CardHeader>
       
       <CardContent className="space-y-4">
+        {idea.isError && (
+          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-4">
+            <strong>LLM Parsing Error:</strong> The LLM response could not be parsed into ideas. See raw response below.<br />
+            <pre className="bg-slate-100 text-xs p-2 rounded overflow-x-auto max-h-40 whitespace-pre-wrap mt-2">{idea.llm_raw_response || 'No raw response available.'}</pre>
+          </div>
+        )}
         <div className="space-y-3">
           <div className="flex items-start gap-2">
             <Zap className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />

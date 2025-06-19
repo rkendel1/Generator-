@@ -33,3 +33,20 @@ class Idea(Base):
     deep_dive_requested = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     repo = relationship("Repo", back_populates="ideas")
+    llm_raw_response = Column(Text)  # Raw LLM response for idea generation
+    deep_dive_raw_response = Column(Text)  # Raw LLM response for deep dive
+
+class Shortlist(Base):
+    __tablename__ = "shortlists"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    idea_id = Column(String, ForeignKey("ideas.id"), nullable=False, unique=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+class DeepDiveVersion(Base):
+    __tablename__ = "deep_dive_versions"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    idea_id = Column(String, ForeignKey("ideas.id"), nullable=False)
+    version_number = Column(Integer, nullable=False)
+    fields = Column(JSONB, default={})
+    llm_raw_response = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Repo, Idea
+from models import Repo, Idea, Shortlist, DeepDiveVersion
 import logging
 
 # Set up logging
@@ -101,22 +101,75 @@ def request_deep_dive(db: Session, idea_id: str):
         logger.error(f"Error requesting deep dive for idea {idea_id}: {e}")
         raise
 
-def save_deep_dive(db: Session, idea_id: str, deep_dive_data: dict):
-    """Save deep dive data for an idea with error handling"""
+def save_deep_dive(db: Session, idea_id: str, deep_dive_data: dict, raw_blob: str = None):
+    """Save deep dive data and raw LLM response for an idea with error handling"""
     try:
         if not idea_id:
             raise ValueError("Idea ID is required")
         if not deep_dive_data:
             raise ValueError("Deep dive data is required")
-            
         idea = db.query(Idea).filter(Idea.id == idea_id).first()
         if not idea:
             raise ValueError(f"Idea with ID {idea_id} not found")
-            
         idea.deep_dive = deep_dive_data
+        if raw_blob is not None:
+            idea.deep_dive_raw_response = raw_blob
         idea.deep_dive_requested = False
         logger.info(f"Saved deep dive data for idea {idea_id}")
         return True
     except Exception as e:
         logger.error(f"Error saving deep dive for idea {idea_id}: {e}")
         raise
+
+def add_to_shortlist(db: Session, idea_id: str):
+    if not db.query(Shortlist).filter(Shortlist.idea_id == idea_id).first():
+        shortlist = Shortlist(idea_id=idea_id)
+        db.add(shortlist)
+        db.commit()
+        db.refresh(shortlist)
+        return shortlist
+    return None
+
+def remove_from_shortlist(db: Session, idea_id: str):
+    shortlist = db.query(Shortlist).filter(Shortlist.idea_id == idea_id).first()
+    if shortlist:
+        db.delete(shortlist)
+        db.commit()
+        return True
+    return False
+
+def get_shortlist_ideas(db: Session):
+    return db.query(Shortlist).all()
+
+def create_deep_dive_version(db: Session, idea_id: str, fields: dict, llm_raw_response: str):
+    # Find the next version number for this idea
+    last = db.query(DeepDiveVersion).filter(DeepDiveVersion.idea_id == idea_id).order_by(DeepDiveVersion.version_number.desc()).first()
+    next_version = 1 if not last else last.version_number + 1
+    version = DeepDiveVersion(
+        idea_id=idea_id,
+        version_number=next_version,
+        fields=fields,
+        llm_raw_response=llm_raw_response
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(version)
+    return version
+
+def get_deep_dive_versions(db: Session, idea_id: str):
+    return db.query(DeepDiveVersion).filter(DeepDiveVersion.idea_id == idea_id).order_by(DeepDiveVersion.version_number.desc()).all()
+
+def get_deep_dive_version(db: Session, idea_id: str, version_number: int):
+    return db.query(DeepDiveVersion).filter(DeepDiveVersion.idea_id == idea_id, DeepDiveVersion.version_number == version_number).first()
+
+def restore_deep_dive_version(db: Session, idea_id: str, version_number: int):
+    version = get_deep_dive_version(db, idea_id, version_number)
+    if not version:
+        return None
+    idea = db.query(Idea).filter(Idea.id == idea_id).first()
+    if not idea:
+        return None
+    idea.deep_dive = version.fields
+    idea.deep_dive_raw_response = version.llm_raw_response
+    db.commit()
+    return idea

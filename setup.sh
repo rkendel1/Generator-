@@ -17,7 +17,7 @@ else
     echo -e "${YELLOW}📝 Creating .env file...${NC}"
     cat > .env << 'EOF'
 # API Configuration
-GROQ_API_KEY=your_groq_api_key_here
+GROQ_API_KEY=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
 
 # Database Configuration
 DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas

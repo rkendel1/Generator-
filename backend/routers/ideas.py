@@ -70,8 +70,11 @@ async def trigger_deepdive(idea_id: str, db: Session = Depends(get_db)):
             raise
         
         # Save the result to database
-        save_deep_dive(db, idea_id, deep_dive_result)
-        db.commit()
+        deep_dive_data = deep_dive_result.get('deep_dive')
+        raw_blob = deep_dive_result.get('raw') or ''
+        if deep_dive_data is not None:
+            save_deep_dive(db, idea_id, deep_dive_data, raw_blob)
+            db.commit()
         
         logger.info(f"Deep dive generated successfully for idea {idea_id}")
         

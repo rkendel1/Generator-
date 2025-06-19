@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Star, GitFork, Eye, TrendingUp, Lightbulb, Target, Clock, DollarSign } from 'lucide-react';
 import { RepoCard } from "@/components/RepoCard";
 import { IdeaWorkspace } from "@/components/IdeaWorkspace";
-import { DeepDiveModal } from "@/components/DeepDiveModal";
 import { Dashboard } from "@/components/Dashboard";
 import { DateNavigation } from "@/components/DateNavigation";
 import { getRepos, getIdeas, triggerDeepDive, transformRepo, transformIdea } from "@/lib/api";
@@ -18,12 +17,13 @@ const Index = () => {
   const [selectedRepo, setSelectedRepo] = useState(null);
   const [repoIdeas, setRepoIdeas] = useState([]);
   const [allRepoIdeas, setAllRepoIdeas] = useState({});
-  const [showDeepDive, setShowDeepDive] = useState(false);
-  const [selectedIdea, setSelectedIdea] = useState(null);
   const [currentRepos, setCurrentRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { toast } = useToast();
+  const [pollingDeepDiveId, setPollingDeepDiveId] = useState<string | null>(null);
+  const [pollingTimeout, setPollingTimeout] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('repos');
 
   // Fetch repositories from API
   useEffect(() => {
@@ -77,54 +77,25 @@ const Index = () => {
     setRepoIdeas(ideas);
   };
 
-  const handleDeepDive = async (idea) => {
-    setSelectedIdea(idea);
-    setShowDeepDive(true);
-    
-    // If deep dive hasn't been generated yet, trigger it
-    if (!idea.deepDiveGenerated && idea.id) {
-      try {
-        toast({
-          title: "Generating Deep Dive",
-          description: "This may take a few moments...",
-        });
-        
-        const result = await triggerDeepDive(idea.id);
-        
-        if (result.status === 'completed' && result.deep_dive) {
-          // Update the idea with the deep dive result
-          const updatedIdea = {
-            ...idea,
-            deep_dive: result.deep_dive,
-            deepDiveGenerated: true
-          };
-          setSelectedIdea(updatedIdea);
-          
-          // Update the ideas in the state
-          setRepoIdeas(prev => 
-            prev.map(i => i.id === idea.id ? updatedIdea : i)
-          );
-          
-          setAllRepoIdeas(prev => ({
-            ...prev,
-            [selectedRepo.id]: prev[selectedRepo.id]?.map(i => i.id === idea.id ? updatedIdea : i) || []
-          }));
-          
-          toast({
-            title: "Deep Dive Complete!",
-            description: "Analysis is ready to view.",
-          });
-        } else {
-          throw new Error(result.message || 'Deep dive generation failed');
-        }
-      } catch (err) {
-        console.error('Error generating deep dive:', err);
-        toast({
-          title: "Deep Dive Failed",
-          description: "Please try again later.",
-          variant: "destructive",
-        });
+  // Clean up polling on unmount or repo/idea change
+  useEffect(() => {
+    return () => {
+      if (pollingTimeout) clearTimeout(pollingTimeout);
+      setPollingDeepDiveId(null);
+    };
+  }, [selectedRepo]);
+
+  // Refetch ideas for a repo and update state
+  const refetchIdeasForRepo = async (repoId) => {
+    try {
+      const ideas = await getIdeas(repoId);
+      setAllRepoIdeas(prev => ({ ...prev, [repoId]: ideas.map(transformIdea) }));
+      // If the selected repo is the one being refetched, update repoIdeas too
+      if (selectedRepo && selectedRepo.id === repoId) {
+        setRepoIdeas(ideas.map(transformIdea));
       }
+    } catch (err) {
+      // Optionally handle error
     }
   };
 
@@ -167,7 +138,7 @@ const Index = () => {
           onDateChange={setCurrentDate}
         />
 
-        <Tabs defaultValue="repos" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-8">
             <TabsTrigger value="repos" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
@@ -196,8 +167,10 @@ const Index = () => {
                     repo={repo} 
                     ideas={allRepoIdeas[repo.id] || []}
                     onSelect={handleRepoSelect}
-                    onDeepDive={handleDeepDive}
                     isSelected={selectedRepo?.id === repo.id}
+                    pollingDeepDiveId={pollingDeepDiveId}
+                    onSwitchToWorkspace={() => setActiveTab('workspace')}
+                    onIdeasRefetch={() => refetchIdeasForRepo(repo.id)}
                   />
                 ))}
               </div>
@@ -208,7 +181,10 @@ const Index = () => {
             <IdeaWorkspace 
               ideas={repoIdeas}
               selectedRepo={selectedRepo}
-              onDeepDive={handleDeepDive}
+              pollingDeepDiveId={pollingDeepDiveId}
+              onIdeasRefetch={() => {
+                if (selectedRepo) refetchIdeasForRepo(selectedRepo.id);
+              }}
             />
           </TabsContent>
 
@@ -216,12 +192,6 @@ const Index = () => {
             <Dashboard ideas={repoIdeas} selectedRepo={selectedRepo} />
           </TabsContent>
         </Tabs>
-
-        <DeepDiveModal 
-          idea={selectedIdea}
-          isOpen={showDeepDive}
-          onClose={() => setShowDeepDive(false)}
-        />
       </div>
       <Toaster />
     </div>
