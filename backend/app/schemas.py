@@ -33,6 +33,7 @@ class IdeaOut(BaseModel):
     llm_raw_response: Optional[str] = None
     deep_dive_raw_response: Optional[str] = None
     status: Literal['suggested', 'deep_dive', 'iterating', 'considering', 'closed']
+    type: Optional[str] = None
 
     class Config:
         from_attributes = True

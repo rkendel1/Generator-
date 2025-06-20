@@ -20,6 +20,7 @@ export function IdeaGenerator({ onIdeaCreated, repos = [] }: { onIdeaCreated?: (
   const [freeform, setFreeform] = useState('');
   const [loading, setLoading] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [modalIdea, setModalIdea] = useState(null);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -131,6 +132,7 @@ export function IdeaGenerator({ onIdeaCreated, repos = [] }: { onIdeaCreated?: (
                 onStatusChange={() => {}}
                 repos={repos}
                 compact={false}
+                onOpenModal={setModalIdea}
               />
             ))}
           </div>

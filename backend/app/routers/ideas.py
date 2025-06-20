@@ -3,7 +3,7 @@ from app.schemas import IdeaOut, ShortlistOut, DeepDiveVersionOut
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
-from llm import generate_deep_dive
+from llm import generate_deep_dive, generate_idea_pitches
 from app.db import get_db
 from models import Idea
 
@@ -108,13 +108,12 @@ async def generate_adhoc_ideas(
     db: Session = Depends(get_db)
 ):
     from app.services.pitch_generation import RANDY_RESUME
-    from llm import generate_idea_pitches
     
     # Build context similar to repo-based generation
     custom_context = f"Industry: {industry}\nBusiness Model: {business_model}\nContext: {context}\n"
     
     # Use the centralized idea generation service
-    result = await generate_idea_pitches(custom_context, user_skills=RANDY_RESUME)
+    result = await generate_idea_pitches(custom_context)
     
     ideas = []
     for idea in result.get('ideas', []):

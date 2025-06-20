@@ -5,13 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Star, Lightbulb, Target, TrendingUp, Users, ArrowRight, StickyNote, Save, Edit3, Rocket, Clock, Brain, Briefcase, BarChart, GripVertical } from 'lucide-react';
 import { IdeaCard } from "./IdeaCard";
-import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion, fetchIdeas, updateIdeaStatus, getAllIdeas, triggerDeepDive } from "../lib/api";
+import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion, fetchIdeas, updateIdeaStatus, getAllIdeas, triggerDeepDive, getIdeaById } from "../lib/api";
 import type { IdeaStatus, Idea, DeepDiveVersion, Repo } from '../lib/api';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import type { AxiosError } from 'axios';
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { useNavigate, Link } from "react-router-dom";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { IdeaDetailModal } from './IdeaDetailModal';
 
 export const LIFECYCLE_STAGES: { key: IdeaStatus; label: string }[] = [
   { key: 'suggested', label: 'Suggested' },
@@ -50,6 +52,9 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
 
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const [modalIdea, setModalIdea] = useState<Idea | null>(null);
+  const [deepDiveInProgress, setDeepDiveInProgress] = useState<string | null>(null);
 
   useEffect(() => {
     if (showAllIdeas) {
@@ -202,12 +207,42 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
     considering: [],
     closed: [],
   };
-  (ideas || []).forEach(idea => {
-    if (showManual && !idea.repo_id) ideasByStatus[idea.status].push(idea);
-    else if (showGenerated && idea.repo_id) ideasByStatus[idea.status].push(idea);
-    else if (!idea.repo_id && !showManual) return;
-    else if (idea.repo_id && !showGenerated) return;
+  
+  console.log('🔍 DEBUG: Processing ideas for filtering:', { 
+    totalIdeas: ideas?.length || 0, 
+    showManual, 
+    showGenerated,
+    ideas: ideas?.map(i => ({ id: i.id, title: i.title, status: i.status, repo_id: i.repo_id, hasDeepDive: !!(i.deep_dive || i.deep_dive_raw_response) }))
   });
+  
+  (ideas || []).forEach(idea => {
+    if (showManual && !idea.repo_id) {
+      console.log('🔍 DEBUG: Adding manual idea to', idea.status, ':', idea.title);
+      ideasByStatus[idea.status].push(idea);
+    }
+    else if (showGenerated && idea.repo_id) {
+      console.log('🔍 DEBUG: Adding generated idea to', idea.status, ':', idea.title);
+      ideasByStatus[idea.status].push(idea);
+    }
+    else if (!idea.repo_id && !showManual) {
+      console.log('🔍 DEBUG: Skipping manual idea (showManual=false):', idea.title);
+      return;
+    }
+    else if (idea.repo_id && !showGenerated) {
+      console.log('🔍 DEBUG: Skipping generated idea (showGenerated=false):', idea.title);
+      return;
+    }
+  });
+  
+  console.log('🔍 DEBUG: Ideas by status after filtering:', {
+    suggested: ideasByStatus.suggested.length,
+    deep_dive: ideasByStatus.deep_dive.length,
+    iterating: ideasByStatus.iterating.length,
+    considering: ideasByStatus.considering.length,
+    closed: ideasByStatus.closed.length,
+    deepDiveIdeas: ideasByStatus.deep_dive.map(i => ({ id: i.id, title: i.title, hasDeepDive: !!(i.deep_dive || i.deep_dive_raw_response) }))
+  });
+
   // Sort each column by best ideas (highest score, lowest effort)
   Object.keys(ideasByStatus).forEach(status => {
     ideasByStatus[status as IdeaStatus].sort((a, b) => {
@@ -231,7 +266,7 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
     const idea = ideasByStatus[sourceStatus].find(i => i.id === draggableId);
     if (!idea) return;
     // Debug log
-    console.log('Kanban move:', { id: idea.id, from: sourceStatus, to: destStatus });
+    console.log('🔍 DEBUG: Kanban move:', { id: idea.id, from: sourceStatus, to: destStatus });
     // Optimistically update UI
     setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, status: destStatus } : i));
     try {
@@ -239,32 +274,116 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
       await updateIdeaStatus(idea.id, destStatus);
       // If moved from suggested to deep_dive, trigger deep dive
       if (sourceStatus === 'suggested' && destStatus === 'deep_dive') {
+        console.log('🔍 DEBUG: Triggering deep dive for dragged idea:', idea.id);
         toast({
           title: 'Deep Dive Requested',
           description: `Generating deep dive for "${idea.title}"...`,
         });
-        await triggerDeepDive(idea.id);
-        setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
-        toast({
-          title: 'Deep Dive Ready',
-          description: `Deep dive for "${idea.title}" is complete!`,
-          action: (
-            <ToastAction altText="View Details" onClick={() => navigate(`/idea/${idea.id}`)}>
-              View Details
-            </ToastAction>
-          ),
-        });
+        try {
+          await triggerDeepDive(idea.id);
+          setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
+          toast({
+            title: 'Deep Dive Started',
+            description: `Deep dive for "${idea.title}" is being generated. This may take a few minutes.`,
+          });
+          
+          // Poll for completion and refresh ideas
+          const pollDeepDive = async (retries = 30) => {
+            console.log('🔍 DEBUG: Starting deep dive polling for dragged idea:', idea.id);
+            for (let i = 0; i < retries; i++) {
+              try {
+                console.log(`🔍 DEBUG: Polling attempt ${i + 1}/${retries}`);
+                const updated = await getIdeaById(idea.id);
+                console.log('🔍 DEBUG: Polling response:', updated);
+                
+                if ((updated.deep_dive_raw_response && updated.deep_dive_raw_response.length > 0) || (updated.deep_dive && Object.keys(updated.deep_dive).length > 0)) {
+                  console.log('🔍 DEBUG: Deep dive completed, refreshing ideas list');
+                  // Refresh the entire ideas list to show the updated data
+                  if (showAllIdeas) {
+                    const allIdeas = await getAllIdeas();
+                    setIdeas(allIdeas);
+                  } else if (repoId) {
+                    const repoIdeas = await fetchIdeas(repoId);
+                    setIdeas(repoIdeas);
+                  }
+                  toast({
+                    title: 'Deep Dive Complete',
+                    description: `Analysis for "${idea.title}" is ready!`,
+                  });
+                  return;
+                }
+                console.log('🔍 DEBUG: Deep dive not ready yet, waiting...');
+                await new Promise(res => setTimeout(res, 2000));
+              } catch (error) {
+                console.error('❌ ERROR: Error polling for deep dive:', error);
+                break;
+              }
+            }
+            console.log('🔍 DEBUG: Polling timeout reached');
+            toast({
+              title: 'Deep Dive Timeout',
+              description: 'The deep dive is taking longer than expected. Please check the idea details.',
+              variant: 'destructive',
+            });
+          };
+          pollDeepDive();
+        } catch (deepDiveError) {
+          console.error('❌ ERROR: Deep dive failed:', deepDiveError);
+          toast({
+            title: 'Deep Dive Failed',
+            description: 'Failed to start deep dive. You can try again from the idea details.',
+            variant: 'destructive',
+          });
+        }
       } else if (destStatus === 'deep_dive') {
         // If moved to deep_dive from another status, just trigger deep dive (no toast)
-        await triggerDeepDive(idea.id);
-        setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
+        console.log('🔍 DEBUG: Triggering deep dive for idea moved to deep_dive:', idea.id);
+        try {
+          await triggerDeepDive(idea.id);
+          setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
+          
+          // Poll for completion and refresh ideas
+          const pollDeepDive = async (retries = 30) => {
+            console.log('🔍 DEBUG: Starting deep dive polling for moved idea:', idea.id);
+            for (let i = 0; i < retries; i++) {
+              try {
+                const updated = await getIdeaById(idea.id);
+                if ((updated.deep_dive_raw_response && updated.deep_dive_raw_response.length > 0) || (updated.deep_dive && Object.keys(updated.deep_dive).length > 0)) {
+                  console.log('🔍 DEBUG: Deep dive completed, refreshing ideas list');
+                  // Refresh the entire ideas list to show the updated data
+                  if (showAllIdeas) {
+                    const allIdeas = await getAllIdeas();
+                    setIdeas(allIdeas);
+                  } else if (repoId) {
+                    const repoIdeas = await fetchIdeas(repoId);
+                    setIdeas(repoIdeas);
+                  }
+                  return;
+                }
+                await new Promise(res => setTimeout(res, 2000));
+              } catch (error) {
+                console.error('❌ ERROR: Error polling for deep dive:', error);
+                break;
+              }
+            }
+          };
+          pollDeepDive();
+        } catch (deepDiveError) {
+          console.error('❌ ERROR: Deep dive failed:', deepDiveError);
+          toast({
+            title: 'Deep Dive Failed',
+            description: 'Failed to start deep dive. You can try again from the idea details.',
+            variant: 'destructive',
+          });
+        }
       }
     } catch (err) {
+      console.error('❌ ERROR: Status update failed:', err);
       // Revert on error
       setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, status: sourceStatus } : i));
       toast({
-        title: 'Failed to update status or trigger deep dive.',
-        description: err instanceof Error ? err.message : undefined,
+        title: 'Failed to update status.',
+        description: err instanceof Error ? err.message : 'Unknown error occurred',
         variant: 'destructive',
       });
     }
@@ -354,6 +473,7 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
                                       repos={repos}
                                       showStatusBadge={true}
                                       showStatusDropdown={true}
+                                      onOpenModal={setModalIdea}
                                     />
                                   </div>
                                 </div>
@@ -371,6 +491,97 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: Idea
           </div>
         </DragDropContext>
       )}
+      
+      {/* Idea Detail Modal */}
+      <Dialog open={!!modalIdea} onOpenChange={open => {
+        if (!open) {
+          setModalIdea(null);
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Idea Details</DialogTitle>
+          </DialogHeader>
+          {modalIdea && (
+            <IdeaDetailModal
+              idea={modalIdea}
+              repos={repos}
+            />
+          )}
+          <DialogFooter className="flex flex-row gap-2 justify-end">
+            {modalIdea?.status === 'suggested' && (
+              <Button variant="default" onClick={async () => {
+                if (!modalIdea) return;
+                setDeepDiveInProgress(modalIdea.id);
+                try {
+                  await triggerDeepDive(modalIdea.id);
+                  // Poll for completion and update modal state
+                  const pollDeepDive = async (retries = 30) => {
+                    console.log('🔍 DEBUG: Starting deep dive polling for idea:', modalIdea.id);
+                    for (let i = 0; i < retries; i++) {
+                      try {
+                        console.log(`🔍 DEBUG: Polling attempt ${i + 1}/${retries}`);
+                        const updated = await getIdeaById(modalIdea.id);
+                        console.log('🔍 DEBUG: Polling response:', updated);
+                        
+                        if ((updated.deep_dive_raw_response && updated.deep_dive_raw_response.length > 0) || (updated.deep_dive && Object.keys(updated.deep_dive).length > 0)) {
+                          console.log('🔍 DEBUG: Deep dive completed, updating modal');
+                          setModalIdea(updated);
+                          setDeepDiveInProgress(null);
+                          toast({
+                            title: 'Deep Dive Complete',
+                            description: `Analysis for "${modalIdea.title}" is ready!`,
+                          });
+                          return;
+                        }
+                        console.log('🔍 DEBUG: Deep dive not ready yet, waiting...');
+                        await new Promise(res => setTimeout(res, 2000));
+                      } catch (error) {
+                        console.error('❌ ERROR: Error polling for deep dive:', error);
+                        break;
+                      }
+                    }
+                    console.log('🔍 DEBUG: Polling timeout reached');
+                    setDeepDiveInProgress(null);
+                    toast({
+                      title: 'Deep Dive Timeout',
+                      description: 'The deep dive is taking longer than expected. Please try again.',
+                      variant: 'destructive',
+                    });
+                  };
+                  pollDeepDive();
+                } catch (error) {
+                  console.error('Error triggering deep dive:', error);
+                  setDeepDiveInProgress(null);
+                  toast({
+                    title: 'Deep Dive Failed',
+                    description: 'Failed to generate deep dive. Please try again.',
+                    variant: 'destructive',
+                  });
+                }
+              }}
+              disabled={!!deepDiveInProgress}
+            >
+              {deepDiveInProgress ? 'Generating...' : 'Get Deep Dive'}
+            </Button>
+            )}
+            {modalIdea?.status === 'deep_dive' && (
+              <Button variant="secondary" onClick={() => {
+                window.location.href = `/idea/${modalIdea.id}`;
+              }}>
+                Iterate
+              </Button>
+            )}
+            {modalIdea && modalIdea.status !== 'suggested' && modalIdea.status !== 'deep_dive' && (
+              <Button variant="secondary" onClick={() => {
+                window.location.href = `/idea/${modalIdea.id}`;
+              }}>
+                Edit
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

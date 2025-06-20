@@ -7,6 +7,17 @@ from app.services.github import fetch_trending
 
 LANGUAGES = ["Python", "TypeScript", "JavaScript"]
 
+
+RANDY_SKILLS_SUMMARY = """
+- Civic technology, political platforms, and engagement tools
+- AI/ML experimentation (RAG, LLM, GenAI, gamification)
+- MVP builds, product management, data analytics
+- Experience with AWS, healthcare, finance, and government
+- Startup founder mindset with lean, no-code/low-code biases
+- Skilled at GTM strategy, stakeholder management, user adoption
+- Seeks ideas that are weird, real, and fundable
+"""
+
 RANDY_RESUME = '''
 Randy L. Kendel
 Warwick, Rhode Island 02886 | 401-484-2831 | randy@kendelconsulting.com | linkedin.com/in/rkendel/
@@ -100,7 +111,7 @@ async def run_nightly_pipeline():
             for attempt in range(1, max_attempts + 1):
                 try:
                     print(f"    Attempt {attempt} to generate ideas...")
-                    result = await generate_idea_pitches(repo.summary, user_skills=RANDY_RESUME)
+                    result = await generate_idea_pitches(repo.summary)
                     raw_blob = result.get('raw')
                     ideas = result.get('ideas', [])
                     if ideas and isinstance(ideas, list) and any(i.get('title') for i in ideas):

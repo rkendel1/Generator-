@@ -51,6 +51,7 @@ export interface Idea {
   llm_raw_response?: string;
   deep_dive_raw_response?: string;
   status: IdeaStatus;
+  type?: string;
 }
 
 export interface DeepDive {
@@ -61,6 +62,7 @@ export interface DeepDive {
   business_funding?: string;
   investor_scoring?: string;
   summary?: string;
+  raw?: string;
   error?: string;
 }
 
@@ -108,10 +110,17 @@ export const getIdeas = async (repoId: string) => {
 
 export const triggerDeepDive = async (ideaId: string) => {
   try {
+    console.log('🔍 DEBUG: triggerDeepDive called for idea:', ideaId);
     const response = await api.post(`/ideas/${ideaId}/deepdive`);
+    console.log('🔍 DEBUG: triggerDeepDive response:', response.data);
     return response.data;
-  } catch (error) {
-    console.error('Error triggering deep dive:', error);
+  } catch (error: unknown) {
+    console.error('❌ ERROR: triggerDeepDive failed:', error);
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response: { data: unknown; status: number } };
+      console.error('❌ ERROR: Response data:', axiosError.response.data);
+      console.error('❌ ERROR: Response status:', axiosError.response.status);
+    }
     throw error;
   }
 };
@@ -260,6 +269,7 @@ export const transformIdea = (idea: Idea) => ({
   isError: idea.title && idea.title.startsWith('[ERROR]'),
   needsNewDeepDive: !(idea.deep_dive && Object.keys(idea.deep_dive).length > 0) && !idea.deep_dive_raw_response,
   status: idea.status,
+  type: idea.type || '',
 });
 
 export async function fetchIdeas(repoId: string): Promise<Idea[]> {
@@ -269,8 +279,20 @@ export async function fetchIdeas(repoId: string): Promise<Idea[]> {
 }
 
 export async function updateIdeaStatus(id: string, status: IdeaStatus): Promise<Idea> {
-  const response = await api.post(`/ideas/${id}/status`, JSON.stringify(status), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-  return response.data;
+  try {
+    console.log('🔍 DEBUG: updateIdeaStatus called:', { id, status });
+    const response = await api.post(`/ideas/${id}/status`, status, {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+    console.log('🔍 DEBUG: updateIdeaStatus response:', response.data);
+    return response.data;
+  } catch (error: unknown) {
+    console.error('❌ ERROR: updateIdeaStatus failed:', error);
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response: { data: unknown; status: number } };
+      console.error('❌ ERROR: Response data:', axiosError.response.data);
+      console.error('❌ ERROR: Response status:', axiosError.response.status);
+    }
+    throw error;
+  }
 } 

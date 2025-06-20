@@ -1,4 +1,3 @@
-
 export const mockRepos = [
     {
       id: 1,
@@ -75,26 +74,6 @@ export const mockRepos = [
         callToAction: "Launch MVP in 3 weeks to validate with 5 design agencies."
       },
       {
-        title: "No-Code API Builder",
-        score: 7,
-        effort: 4,
-        hook: "Convert this into a visual API building platform for non-technical users.",
-        value: "Enables business users to create custom APIs without coding knowledge.",
-        evidence: "85% of businesses need custom APIs but lack technical resources",
-        differentiator: "Visual drag-and-drop interface with automatic documentation generation.",
-        callToAction: "Build prototype in 4 weeks and test with 10 SMB customers."
-      },
-      {
-        title: "Team Productivity Analytics",
-        score: 6,
-        effort: 5,
-        hook: "Leverage this codebase to build advanced team performance analytics.",
-        value: "Data-driven insights to optimize team productivity and project outcomes.",
-        evidence: "Remote teams are 35% less productive without proper monitoring tools",
-        differentiator: "Privacy-first analytics with predictive performance modeling.",
-        callToAction: "Develop MVP in 6 weeks targeting distributed engineering teams."
-      },
-      {
         title: "Smart Documentation Generator",
         score: 9,
         effort: 2,
@@ -103,16 +82,6 @@ export const mockRepos = [
         evidence: "Developers spend 25% of their time on documentation tasks",
         differentiator: "Context-aware AI that understands code relationships and business logic.",
         callToAction: "Ship beta version in 2 weeks to 20 open-source projects."
-      },
-      {
-        title: "Micro-SaaS Launcher",
-        score: 7,
-        effort: 6,
-        hook: "Build a platform that helps developers launch micro-SaaS products quickly.",
-        value: "Complete toolkit for rapid SaaS development and deployment.",
-        evidence: "90% of developers have SaaS ideas but struggle with non-technical aspects",
-        differentiator: "Integrated billing, analytics, and marketing automation in one platform.",
-        callToAction: "Create beta program with 15 indie developers over 8 weeks."
       },
       {
         title: "Code Quality Scorecard",
@@ -125,38 +94,18 @@ export const mockRepos = [
         callToAction: "Launch alpha with 12 development teams in 3 weeks."
       },
       {
-        title: "Developer Onboarding Assistant",
-        score: 6,
-        effort: 4,
-        hook: "Create an intelligent onboarding system for new developers joining teams.",
-        value: "Personalized learning paths and mentorship matching for faster team integration.",
-        evidence: "New developers take 6+ months to become fully productive",
-        differentiator: "AI-powered skill gap analysis with peer mentorship networks.",
-        callToAction: "Test with 8 engineering teams over 5 weeks."
-      },
-      {
-        title: "Open Source Monetization Platform",
-        score: 9,
-        effort: 7,
-        hook: "Build a platform helping open-source maintainers monetize their projects sustainably.",
-        value: "Multiple revenue streams for OSS projects including sponsorships and premium features.",
-        evidence: "98% of critical infrastructure runs on unpaid open-source projects",
-        differentiator: "Integrated donation, subscription, and consulting marketplace.",
-        callToAction: "Partner with 25 popular OSS projects for 10-week pilot program."
-      },
-      {
-        title: "API Security Scanner",
+        title: "No-Code API Builder",
         score: 8,
-        effort: 5,
-        hook: "Transform into a comprehensive API security testing and monitoring platform.",
-        value: "Continuous API security scanning with vulnerability alerts and remediation guidance.",
-        evidence: "API attacks increased 681% in 2023, affecting 90% of organizations",
-        differentiator: "Real-time threat detection with automated penetration testing.",
-        callToAction: "Deploy beta with 15 security-conscious startups in 6 weeks."
+        effort: 4,
+        hook: "Convert this into a visual API building platform for non-technical users.",
+        value: "Enables business users to create custom APIs without coding knowledge.",
+        evidence: "85% of businesses need custom APIs but lack technical resources",
+        differentiator: "Visual drag-and-drop interface with automatic documentation generation.",
+        callToAction: "Build prototype in 4 weeks and test with 10 SMB customers."
       },
       {
         title: "Feature Flag Analytics",
-        score: 7,
+        score: 8,
         effort: 4,
         hook: "Create an advanced analytics platform for feature flag performance optimization.",
         value: "Data-driven feature rollout decisions with user behavior impact analysis.",

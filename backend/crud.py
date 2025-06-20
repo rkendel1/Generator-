@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 from models import Repo, Idea, Shortlist, DeepDiveVersion
 import logging
 from app.services.event_bus import EventBus
-from app.services.idea_service import IdeaService
 import json
 from app.schemas import IdeaOut
 import os
@@ -16,7 +15,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 event_bus = EventBus.get_instance()
-idea_service = IdeaService(event_bus)
 
 redis_client = None
 if redis:
@@ -101,6 +99,8 @@ def create_ideas(db: Session, repo_id: str, ideas_list: list):
                     idea_data['mvp_effort'] = None
                 if 'score' in idea_data and not isinstance(idea_data['score'], int):
                     idea_data['score'] = None
+                if 'type' not in idea_data:
+                    idea_data['type'] = None
                 idea = Idea(repo_id=repo_id, **idea_data)
                 ideas.append(idea)
             except Exception as e:
@@ -116,7 +116,7 @@ def create_ideas(db: Session, repo_id: str, ideas_list: list):
         raise
 
 def request_deep_dive(db: Session, idea_id: str):
-    """Request deep dive for an idea with error handling"""
+    """Mark an idea for a deep dive"""
     try:
         if not idea_id:
             raise ValueError("Idea ID is required")
@@ -126,11 +126,14 @@ def request_deep_dive(db: Session, idea_id: str):
             raise ValueError(f"Idea with ID {idea_id} not found")
             
         idea.deep_dive_requested = True
+        db.commit()
         logger.info(f"Marked deep dive as requested for idea {idea_id}")
         return True
+
     except Exception as e:
         logger.error(f"Error requesting deep dive for idea {idea_id}: {e}")
-        raise
+        # We don't want to crash the caller, just log the error
+        return False
 
 def save_deep_dive(db: Session, idea_id: str, deep_dive_data: dict, raw_blob: str = None):
     """Save deep dive data and raw LLM response for an idea with error handling"""
@@ -207,4 +210,7 @@ def restore_deep_dive_version(db: Session, idea_id: str, version_number: int):
 
 def update_idea_status(db: Session, idea_id: str, new_status: str):
     """Update the status of an idea using the event-driven service."""
+    from app.services.idea_service import IdeaService
+    event_bus = EventBus.get_instance()
+    idea_service = IdeaService(event_bus)
     return idea_service.update_status(db, idea_id, new_status)

@@ -108,12 +108,16 @@ def parse_idea_response(response: Optional[str]) -> list:
     if isinstance(ideas, list) and ideas:
         return ideas
     # Fallback: split by '**Idea' or numbered headings
-    sections = re.split(r'\*\*Idea \d+|^Idea \d+|^\d+\. ', response, flags=re.MULTILINE)
+    sections = re.split(r'\\*\\*Idea \\d+|^Idea \\d+|^\\d+\\. ', response, flags=re.MULTILINE)
     parsed = []
     for section in sections:
         idea = parse_single_idea(section)
         if idea:
-            parsed.append(idea)
+            # Enforce the quality filter on the backend
+            if idea.get('score', 0) >= 8 and idea.get('mvp_effort', 10) <= 4:
+                parsed.append(idea)
+            else:
+                logger.info(f"Filtering out idea '{idea.get('title')}' due to low score or high effort.")
     return parsed
 
 def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
@@ -128,8 +132,18 @@ def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
         "differentiator": "",
         "call_to_action": "",
         "score": 5,
-        "mvp_effort": 5
+        "mvp_effort": 5,
+        "type": None
     }
+    
+    # Try to extract JSON if present
+    try:
+        parsed_json = json.loads(section)
+        if isinstance(parsed_json, dict) and "type" in parsed_json:
+            idea.update(parsed_json)
+            return idea
+    except Exception:
+        pass
     
     # Extract title (first line or after "Title:")
     lines = section.strip().split('\n')
@@ -141,12 +155,10 @@ def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
     # Extract structured fields
     current_field = None
     current_content = []
-    
     for line in lines:
         line = line.strip()
         if not line:
             continue
-            
         # Check for field headers
         if line.startswith('Hook'):
             if current_field and current_content:
@@ -173,6 +185,15 @@ def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
                 idea[current_field] = '\n'.join(current_content).strip()
             current_field = 'call_to_action'
             current_content = []
+        elif line.startswith('Type') or line.lower().startswith('type'):
+            if current_field and current_content:
+                idea[current_field] = '\n'.join(current_content).strip()
+            # Extract type
+            type_match = re.search(r'(side_hustle|full_scale)', line, re.IGNORECASE)
+            if type_match:
+                idea["type"] = type_match.group(1).lower()
+            current_field = None
+            current_content = []
         elif line.startswith('💡 Idea Score'):
             if current_field and current_content:
                 idea[current_field] = '\n'.join(current_content).strip()
@@ -191,15 +212,12 @@ def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
             # Content for current field
             if current_field:
                 current_content.append(line)
-    
     # Save last field content
     if current_field and current_content:
         idea[current_field] = '\n'.join(current_content).strip()
-    
     # Validate that we have at least a title
     if not idea["title"]:
         return None
-        
     return idea
 
 def parse_deep_dive_response(response: Optional[str]) -> dict:
@@ -238,43 +256,43 @@ def parse_deep_dive_response(response: Optional[str]) -> dict:
             continue
             
         # Check for section headers
-        if '🚀 Product Clarity & MVP' in line:
+        if 'Product Clarity & MVP' in line:
             logger.info(f"🔍 DEBUG: Found Product Clarity section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'product_clarity'
             current_content = []
-        elif '🕰 Timing / Why Now' in line:
+        elif 'Timing / Why Now' in line:
             logger.info(f"🔍 DEBUG: Found Timing section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'timing'
             current_content = []
-        elif '📈 Market Opportunity' in line:
+        elif 'Market Opportunity' in line:
             logger.info(f"🔍 DEBUG: Found Market Opportunity section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'market_opportunity'
             current_content = []
-        elif '🧠 Strategic Moat / IP / Differentiator' in line:
+        elif 'Strategic Moat / IP / Differentiator' in line:
             logger.info(f"🔍 DEBUG: Found Strategic Moat section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'strategic_moat'
             current_content = []
-        elif '💼 Business + Funding Snapshot' in line:
+        elif 'Business + Funding Snapshot' in line:
             logger.info(f"🔍 DEBUG: Found Business Funding section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'business_funding'
             current_content = []
-        elif '📊 Investor Scoring Model' in line:
+        elif 'Investor Scoring Model' in line:
             logger.info(f"🔍 DEBUG: Found Investor Scoring section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
             current_section = 'investor_scoring'
             current_content = []
-        elif '✅ Summary Slide' in line:
+        elif 'Summary Slide' in line:
             logger.info(f"🔍 DEBUG: Found Summary section at line {i}")
             if current_section and current_content:
                 deep_dive[current_section] = '\n'.join(current_content).strip()
@@ -289,8 +307,59 @@ def parse_deep_dive_response(response: Optional[str]) -> dict:
     if current_section and current_content:
         deep_dive[current_section] = '\n'.join(current_content).strip()
     
+    # Parse investor scoring section specifically
+    if deep_dive.get('investor_scoring') and isinstance(deep_dive['investor_scoring'], str):
+        deep_dive['investor_scoring'] = parse_investor_scoring(deep_dive['investor_scoring'])
+    
     logger.info(f"🔍 DEBUG: Final parsed deep_dive: {deep_dive}")
     return deep_dive
+
+def parse_investor_scoring(scoring_text: str) -> dict:
+    """Parse the investor scoring table and extract individual scores"""
+    if not scoring_text:
+        return {}
+    
+    # Define the expected scoring categories
+    scoring_categories = [
+        "Product-Market Fit Potential",
+        "Market Size & Timing", 
+        "Founder's Ability to Execute",
+        "Technical Feasibility",
+        "Competitive Moat",
+        "Profitability Potential",
+        "Strategic Exit Potential",
+        "Overall Investor Attractiveness"
+    ]
+    
+    parsed_scores = {}
+    lines = scoring_text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Look for lines that contain a category name and a score
+        for category in scoring_categories:
+            if category in line:
+                # Try to extract score using various patterns
+                score_match = re.search(r'(\d+)/10', line)
+                if score_match:
+                    score = int(score_match.group(1))
+                    parsed_scores[category] = score
+                    break
+                # Also try to find just a number
+                score_match = re.search(r'\b(\d+)\b', line)
+                if score_match:
+                    score = int(score_match.group(1))
+                    if 1 <= score <= 10:  # Validate it's a reasonable score
+                        parsed_scores[category] = score
+                        break
+    
+    # Add the raw text as well for reference
+    parsed_scores['raw_text'] = scoring_text
+    
+    return parsed_scores
 
 def is_english(text: Optional[str]) -> bool:
     # Simple heuristic: if most characters are ASCII, assume English
@@ -299,12 +368,17 @@ def is_english(text: Optional[str]) -> bool:
     ascii_chars = sum(1 for c in text if ord(c) < 128)
     return ascii_chars / max(1, len(text)) > 0.85
 
-async def generate_idea_pitches(repo_description: Optional[str], user_skills: str = None) -> dict:
+async def generate_idea_pitches(repo_description: Optional[str], user_skills: Optional[str] = None) -> dict:
     from prompts import IDEA_PROMPT
+    from app.services.pitch_generation import RANDY_SKILLS_SUMMARY
+    
     if not repo_description:
         return {"raw": None, "ideas": [{"error": "No repo description provided."}]}
-    skills_section = f"\n\nUser Skills and Experience:\n{user_skills}\n" if user_skills else ""
-    prompt = f"{IDEA_PROMPT}{skills_section}\n\nRepository Description: {repo_description}\n\nGenerate 10 ideas:"
+    
+    # Always include Randy's skills summary - this is a hard requirement
+    skills_section = f"\n\nCRITICAL: You MUST only generate ideas that are a strong fit for the following skills and experience:\n{RANDY_SKILLS_SUMMARY}\n\nAny additional user context:\n{user_skills or 'None provided'}\n"
+    
+    prompt = f"{IDEA_PROMPT}{skills_section}\n\nRepository Description: {repo_description}\n\nGenerate 10 ideas that are SPECIFICALLY tailored to the skills above:"
     try:
         response = await call_groq(prompt)
         if response is None:

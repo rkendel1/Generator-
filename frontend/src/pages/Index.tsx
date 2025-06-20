@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { RepoCard } from "@/components/RepoCard";
 import { IdeaWorkspace } from "@/components/IdeaWorkspace";
 import { Dashboard } from "@/components/Dashboard";
 import { DateNavigation } from "@/components/DateNavigation";
-import { getRepos, getIdeas, triggerDeepDive, transformRepo, transformIdea, updateIdeaStatus, IdeaStatus, Idea } from "@/lib/api";
+import { getRepos, getIdeas, triggerDeepDive, getIdeaById, updateIdeaStatus, Idea, Repo, transformRepo, IdeaStatus } from "@/lib/api";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
 import { IdeaGenerator } from '@/components/IdeaGenerator';
@@ -16,6 +16,26 @@ import { IdeaCard } from "@/components/IdeaCard";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Link } from 'react-router-dom';
 import { LIFECYCLE_STAGES } from '@/components/IdeaWorkspace';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { IdeaDetailModal } from '@/components/IdeaDetailModal';
+
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { DragOverlay } from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { Droppable } from '@/components/Droppable';
+import { Draggable } from '@/components/Draggable';
+
+const VALID_STATUSES = LIFECYCLE_STAGES.map(stage => stage.key);
 
 const Index = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -30,8 +50,47 @@ const Index = () => {
   const [pollingTimeout, setPollingTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState('new');
   const [repoStatus, setRepoStatus] = useState({}); // { [repoId]: { status: 'idle'|'loading'|'success'|'error', error?: string } }
+  const [deepDiveInProgress, setDeepDiveInProgress] = useState<string | null>(null);
+  const [modalIdea, setModalIdea] = useState<Idea | null>(null);
 
-  // Fetch repositories from API
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
+  const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
+
+  const transformIdea = (idea: Idea): Idea => {
+    // This function can be used to add any client-side transformations if needed.
+    // For now, it just ensures the type.
+    return idea;
+  };
+
+  const fetchAllIdeas = useCallback(async (repos: Repo[]) => {
+    if (!repos || repos.length === 0) return;
+    try {
+      const ideasMap = {};
+      await Promise.all(repos.map(async (repo) => {
+        const ideas = await getIdeas(repo.id);
+        if (ideas && Array.isArray(ideas)) {
+          ideasMap[repo.id] = ideas.filter(idea => idea && idea.id).map(transformIdea);
+        } else {
+          ideasMap[repo.id] = [];
+        }
+      }));
+      setAllRepoIdeas(ideasMap);
+    } catch (error) {
+      console.error("Failed to fetch all ideas:", error);
+      toast({
+        title: 'Error',
+        description: 'Could not fetch ideas. Please try again later.',
+        variant: 'destructive'
+      });
+    }
+  }, [setAllRepoIdeas, currentRepos]);
+
   useEffect(() => {
     const fetchRepos = async () => {
       try {
@@ -56,32 +115,11 @@ const Index = () => {
     fetchRepos();
   }, []);
 
-  // Fetch ideas for all repos when repos change
   useEffect(() => {
-    const fetchAllIdeas = async () => {
-      if (currentRepos.length === 0) return;
-      const ideasMap = {};
-      const statusMap = {};
-      for (const repo of currentRepos) {
-        statusMap[repo.id] = { status: 'loading' };
-        setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'loading' } }));
-        try {
-          const ideas = await getIdeas(repo.id);
-          ideasMap[repo.id] = ideas.filter(idea => idea && idea.id).map(transformIdea);
-          statusMap[repo.id] = { status: 'success' };
-          setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'success' } }));
-        } catch (err) {
-          console.error(`Error fetching ideas for repo ${repo.id}:`, err);
-          ideasMap[repo.id] = [];
-          statusMap[repo.id] = { status: 'error', error: err?.message || 'Failed to fetch ideas' };
-          setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'error', error: err?.message || 'Failed to fetch ideas' } }));
-        }
-      }
-      setAllRepoIdeas(ideasMap);
-    };
-
-    fetchAllIdeas();
-  }, [currentRepos]);
+    if (currentRepos.length > 0) {
+      fetchAllIdeas(currentRepos);
+    }
+  }, [currentRepos, fetchAllIdeas]);
 
   const handleRepoSelect = (repo) => {
     setSelectedRepo(repo);
@@ -268,7 +306,7 @@ const Index = () => {
                                 onStatusChange={async (id, newStatus) => {
                                   if (newStatus === idea.status) return;
                                   try {
-                                    await updateIdeaStatus(id, newStatus);
+                                    await updateIdeaStatus(id, newStatus as IdeaStatus);
                                     if (idea.status === 'suggested' && newStatus === 'deep_dive') {
                                       await triggerDeepDive(id);
                                     }
@@ -282,6 +320,7 @@ const Index = () => {
                                 showStatusDropdown={false}
                                 showStatusBadge={false}
                                 forceNewBadge={isNewIdea(idea)}
+                                onOpenModal={setModalIdea}
                               />
                             </div>
                           ))}
@@ -297,27 +336,150 @@ const Index = () => {
           <TabsContent value="workspace" className="space-y-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-slate-800">
-                {selectedRepo ? `Ideas for ${selectedRepo.name}` : 'All Ideas Workspace'}
+                All Ideas Workspace
               </h2>
-              {selectedRepo ? (
-                <Button 
-                  onClick={() => setSelectedRepo(null)}
-                  className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50"
-                >
-                  <Lightbulb className="w-4 h-4" />
-                  Show All Ideas
-                </Button>
-              ) : (
-                <div className="text-sm text-slate-600">
-                  Showing all ideas from all repos and manual generation
-                </div>
-              )}
+              <div className="text-sm text-slate-600">
+                Showing all ideas from all repos and manual generation
+              </div>
             </div>
-            <IdeaWorkspace 
-              repoId={selectedRepo?.id} 
-              showAllIdeas={!selectedRepo}
-              repos={currentRepos}
-            />
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={({ active }) => {
+                setActiveIdeaId(active.id as string);
+              }}
+              onDragEnd={async ({ active, over }) => {
+                setActiveIdeaId(null);
+                if (!over || active.id === over.id) return;
+
+                const ideaId = active.id as string;
+                const newStatus = over.id as IdeaStatus;
+
+                // Validate newStatus is a valid status string
+                if (!VALID_STATUSES.includes(newStatus)) {
+                  toast({
+                    title: 'Invalid Status',
+                    description: 'Could not move idea: invalid status column.',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+
+                // Use all ideas
+                const allIdeas = Object.values(allRepoIdeas).flat() as Idea[];
+                const idea = allIdeas.find(i => i.id === ideaId);
+                if (!idea || idea.status === newStatus) return;
+
+                // Optimistically update UI
+                setAllRepoIdeas(prev => {
+                  const newIdeas = { ...prev };
+                  for (const repoId in newIdeas) {
+                    newIdeas[repoId] = newIdeas[repoId].map(i =>
+                      i.id === ideaId ? { ...i, status: newStatus } : i
+                    );
+                  }
+                  return newIdeas;
+                });
+
+                try {
+                  await updateIdeaStatus(ideaId, newStatus as IdeaStatus);
+                  setDeepDiveInProgress(ideaId);
+                  // Start polling for deep dive completion
+                  const pollDeepDive = async (retries = 30) => {
+                    for (let i = 0; i < retries; i++) {
+                      const updated = await getIdeaById(ideaId);
+                      if ((updated.deep_dive_raw_response && updated.deep_dive_raw_response.length > 0) || (updated.deep_dive && Object.keys(updated.deep_dive).length > 0)) {
+                        setModalIdea(updated);
+                        setDeepDiveInProgress(null);
+                        return;
+                      }
+                      await new Promise(res => setTimeout(res, 2000));
+                    }
+                    setDeepDiveInProgress(null);
+                  };
+                  pollDeepDive();
+                } catch (err) {
+                  setDeepDiveInProgress(null);
+                  toast({
+                    title: 'Error',
+                    description: 'Failed to update idea status',
+                    variant: 'destructive',
+                  });
+                }
+              }}
+            >
+              <div className="flex gap-4 overflow-x-auto pb-2">
+                {LIFECYCLE_STAGES.map(stage => {
+                  // Gather all ideas for this status
+                  const allIdeas = Object.values(allRepoIdeas).flat() as Idea[];
+                  const ideasForStage = allIdeas.filter(idea => idea.status === stage.key);
+                  return (
+                    <Droppable key={stage.key} id={stage.key}>
+                      {({ isOver, setNodeRef }) => (
+                        <div
+                          ref={setNodeRef}
+                          className={`transition-all rounded p-2 w-80 min-w-[20rem] h-[70vh] flex flex-col ${
+                            isOver ? 'bg-blue-100 border-blue-500 border-2' : 'bg-slate-100 border border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-sm font-semibold">{stage.label}</div>
+                            <span className="bg-slate-300 text-xs rounded px-2 py-0.5 ml-2">{ideasForStage.length}</span>
+                          </div>
+                          <SortableContext
+                            items={ideasForStage.map(i => i.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                              {ideasForStage.length === 0 ? (
+                                <div className="text-slate-400 text-xs text-center py-2">No ideas</div>
+                              ) : (
+                                ideasForStage.map(idea => (
+                                  <Draggable key={idea.id} id={idea.id}>
+                                    <IdeaCard
+                                      idea={idea}
+                                      onDeepDive={() => triggerDeepDive(idea.id)}
+                                      onStatusChange={() => {}}
+                                      repos={currentRepos}
+                                      showRepoSummary={false}
+                                      showStatusDropdown={false}
+                                      showStatusBadge={false}
+                                      forceNewBadge={isNewIdea(idea)}
+                                      deepDiveInProgress={deepDiveInProgress === idea.id}
+                                      onOpenModal={setModalIdea}
+                                    />
+                                  </Draggable>
+                                ))
+                              )}
+                            </div>
+                          </SortableContext>
+                        </div>
+                      )}
+                    </Droppable>
+                  );
+                })}
+              </div>
+              <DragOverlay>
+                {activeIdeaId && (() => {
+                  const allIdeas = Object.values(allRepoIdeas).flat() as Idea[];
+                  const activeIdea = allIdeas.find(i => i.id === activeIdeaId);
+                  if (!activeIdea) return null;
+                  return (
+                    <div className="z-50 pointer-events-none">
+                      <IdeaCard
+                        idea={activeIdea}
+                        onDeepDive={() => {}}
+                        onStatusChange={() => {}}
+                        repos={currentRepos}
+                        showRepoSummary={false}
+                        showStatusDropdown={false}
+                        showStatusBadge={false}
+                      />
+                    </div>
+                  );
+                })()}
+              </DragOverlay>
+            </DndContext>
           </TabsContent>
 
           <TabsContent value="dashboard">
@@ -330,6 +492,99 @@ const Index = () => {
         </Tabs>
       </div>
       <Toaster />
+      {/* Idea Detail Modal */}
+      <Dialog open={!!modalIdea} onOpenChange={open => {
+        if (!open) {
+          setModalIdea(null);
+          // Refetch all ideas to update Kanban
+          fetchAllIdeas(currentRepos);
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Idea Details</DialogTitle>
+          </DialogHeader>
+          {modalIdea && (
+            <IdeaDetailModal
+              idea={modalIdea}
+              repos={currentRepos}
+            />
+          )}
+          <DialogFooter className="flex flex-row gap-2 justify-end">
+            {modalIdea?.status === 'suggested' && (
+              <Button variant="default" onClick={async () => {
+                if (!modalIdea) return;
+                setDeepDiveInProgress(modalIdea.id);
+                try {
+                  await triggerDeepDive(modalIdea.id);
+                  // Poll for completion and update modal state
+                  const pollDeepDive = async (retries = 30) => {
+                    console.log('🔍 DEBUG: Starting deep dive polling for idea:', modalIdea.id);
+                    for (let i = 0; i < retries; i++) {
+                      try {
+                        console.log(`🔍 DEBUG: Polling attempt ${i + 1}/${retries}`);
+                        const updated = await getIdeaById(modalIdea.id);
+                        console.log('🔍 DEBUG: Polling response:', updated);
+                        
+                        if ((updated.deep_dive_raw_response && updated.deep_dive_raw_response.length > 0) || (updated.deep_dive && Object.keys(updated.deep_dive).length > 0)) {
+                          console.log('🔍 DEBUG: Deep dive completed, updating modal');
+                          setModalIdea(updated);
+                          setDeepDiveInProgress(null);
+                          toast({
+                            title: 'Deep Dive Complete',
+                            description: `Analysis for "${modalIdea.title}" is ready!`,
+                          });
+                          return;
+                        }
+                        console.log('🔍 DEBUG: Deep dive not ready yet, waiting...');
+                        await new Promise(res => setTimeout(res, 2000));
+                      } catch (error) {
+                        console.error('❌ ERROR: Error polling for deep dive:', error);
+                        break;
+                      }
+                    }
+                    console.log('🔍 DEBUG: Polling timeout reached');
+                    setDeepDiveInProgress(null);
+                    toast({
+                      title: 'Deep Dive Timeout',
+                      description: 'The deep dive is taking longer than expected. Please try again.',
+                      variant: 'destructive',
+                    });
+                  };
+                  pollDeepDive();
+                } catch (error) {
+                  console.error('Error triggering deep dive:', error);
+                  setDeepDiveInProgress(null);
+                  toast({
+                    title: 'Deep Dive Failed',
+                    description: 'Failed to generate deep dive. Please try again.',
+                    variant: 'destructive',
+                  });
+                }
+              }}
+              disabled={!!deepDiveInProgress}
+            >
+              {deepDiveInProgress ? 'Generating...' : 'Get Deep Dive'}
+            </Button>
+            )}
+            {modalIdea?.status === 'deep_dive' && (
+              <Button variant="secondary" onClick={() => {
+                window.location.href = `/ideas/${modalIdea.id}`;
+              }}>
+                Iterate
+              </Button>
+            )}
+            {modalIdea && modalIdea.status !== 'suggested' && modalIdea.status !== 'deep_dive' && (
+              <Button variant="secondary" onClick={() => {
+                window.location.href = `/ideas/${modalIdea.id}`;
+              }}>
+                Edit
+              </Button>
+            )}
+            {/* Save button can be implemented here if editing is enabled */}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

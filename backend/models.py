@@ -36,6 +36,7 @@ class Idea(Base):
     llm_raw_response = Column(Text)  # Raw LLM response for idea generation
     deep_dive_raw_response = Column(Text)  # Raw LLM response for deep dive
     status = Column(Enum('suggested', 'deep_dive', 'iterating', 'considering', 'closed', name='idea_status'), default='suggested', nullable=False)
+    type = Column(String(20), nullable=True, default=None)
 
 class Shortlist(Base):
     __tablename__ = "shortlists"

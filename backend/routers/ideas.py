@@ -23,27 +23,25 @@ def list_by_repo(repo_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{idea_id}/deepdive")
 async def trigger_deepdive(idea_id: str, db: Session = Depends(get_db)):
+    idea = db.query(Idea).filter(Idea.id == idea_id).first()
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    
+    logger.error(f"🔍 DEBUG: trigger_deepdive called for idea {idea_id}")
+    logger.error(f"🔍 DEBUG: Found idea: {idea.title}")
+    logger.error(f"🔍 DEBUG: idea.deep_dive exists: {bool(idea.deep_dive)}")
+    logger.error(f"🔍 DEBUG: idea.deep_dive_requested: {idea.deep_dive_requested}")
+    
+    # Check if deep dive already exists and is not being re-requested
+    if idea.deep_dive and not idea.deep_dive_requested:
+        logger.error(f"🔍 DEBUG: Returning cached deep dive")
+        return {"status": "completed", "deep_dive": idea.deep_dive}
+    
+    # Mark as requested
+    idea.deep_dive_requested = True
+    db.commit()
+    
     try:
-        logger.error(f"🔍 DEBUG: trigger_deepdive called for idea {idea_id}")
-        
-        # Get the idea data
-        idea = db.query(Idea).filter(Idea.id == idea_id).first()
-        if not idea:
-            raise HTTPException(status_code=404, detail="Idea not found")
-        
-        logger.error(f"🔍 DEBUG: Found idea: {idea.title}")
-        logger.error(f"🔍 DEBUG: idea.deep_dive exists: {bool(idea.deep_dive)}")
-        logger.error(f"🔍 DEBUG: idea.deep_dive_requested: {idea.deep_dive_requested}")
-        
-        # Check if deep dive already exists
-        if idea.deep_dive and not idea.deep_dive_requested:
-            logger.error(f"🔍 DEBUG: Returning cached deep dive")
-            return {"status": "completed", "deep_dive": idea.deep_dive}
-        
-        # Mark as requested
-        request_deep_dive(db, idea_id)
-        db.commit()
-        
         # Prepare idea data for deep dive generation
         idea_data = {
             "title": idea.title,
@@ -56,36 +54,30 @@ async def trigger_deepdive(idea_id: str, db: Session = Depends(get_db)):
             "mvp_effort": idea.mvp_effort
         }
         
-        logger.error(f"🔍 DEBUG: Prepared idea_data: {idea_data}")
-        
-        # Generate the deep dive synchronously
         logger.info(f"Generating deep dive for idea {idea_id}")
-        logger.error(f"🔍 DEBUG: About to call generate_deep_dive...")
         
-        try:
-            deep_dive_result = await generate_deep_dive(idea_data)
-            logger.error(f"🔍 DEBUG: generate_deep_dive returned: {deep_dive_result}")
-        except Exception as e:
-            logger.error(f"🔍 DEBUG: Exception in generate_deep_dive: {e}")
-            raise
+        deep_dive_result = await generate_deep_dive(idea_data)
         
         # Save the result to database
         deep_dive_data = deep_dive_result.get('deep_dive')
         raw_blob = deep_dive_result.get('raw') or ''
-        if deep_dive_data is not None:
-            save_deep_dive(db, idea_id, deep_dive_data, raw_blob)
-            db.commit()
+
+        if deep_dive_data is None:
+            raise Exception("Deep dive generation returned no data.")
+
+        save_deep_dive(db, idea_id, deep_dive_data, raw_blob)
+        db.commit()
         
         logger.info(f"Deep dive generated successfully for idea {idea_id}")
         
         return {
             "status": "completed", 
-            "deep_dive": deep_dive_result,
+            "deep_dive": deep_dive_data,
             "message": "Deep dive analysis completed"
         }
-        
-    except HTTPException:
-        raise
     except Exception as e:
+        # Reset the flag on failure
+        idea.deep_dive_requested = False
+        db.commit()
         logger.error(f"Error generating deep dive for idea {idea_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate deep dive: {str(e)}")
