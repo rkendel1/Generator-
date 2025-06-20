@@ -27,9 +27,9 @@ services:
       context: ./backend
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
-      - GROQ_API_KEY_1=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
-      - GROQ_API_KEY_2=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
-      - GROQ_API_KEY_3=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
+      - GROQ_API_KEY_1=
+      - GROQ_API_KEY_2=
+      - GROQ_API_KEY_3=
       - REDIS_URL=redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -68,9 +68,9 @@ services:
     command: ["python", "cron/nightly_runner.py"]
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
-      - GROQ_API_KEY_1=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
-      - GROQ_API_KEY_2=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
-      - GROQ_API_KEY_3=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
+      - GROQ_API_KEY_1=
+      - GROQ_API_KEY_2=
+      - GROQ_API_KEY_3=
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
