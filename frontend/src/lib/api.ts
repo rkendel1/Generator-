@@ -70,6 +70,15 @@ export interface DeepDiveResponse {
   message?: string;
 }
 
+export interface DeepDiveVersion {
+  id: string;
+  idea_id: string;
+  version_number: number;
+  fields: DeepDive;
+  llm_raw_response?: string;
+  created_at?: string;
+}
+
 // API Functions
 export const getRepos = async (lang?: string, search?: string, period?: string) => {
   try {
@@ -207,6 +216,16 @@ export const getAllIdeas = async () => {
   }
 };
 
+export const getIdeaById = async (ideaId: string): Promise<Idea> => {
+  try {
+    const response = await api.get(`/ideas/${ideaId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching idea by id:', error);
+    throw error;
+  }
+};
+
 // Data transformation functions to match frontend expectations
 export const transformRepo = (repo: Repo) => ({
   id: repo.id,
@@ -250,7 +269,7 @@ export async function fetchIdeas(repoId: string): Promise<Idea[]> {
 }
 
 export async function updateIdeaStatus(id: string, status: IdeaStatus): Promise<Idea> {
-  const res = await fetch(`/api/ideas/${id}/status`, {
+  const res = await fetch(`/ideas/${id}/status`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),

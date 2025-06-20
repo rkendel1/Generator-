@@ -3,7 +3,7 @@ import httpx
 import json
 import re
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import asyncio
 
 # Set up logging
@@ -99,15 +99,27 @@ def extract_json_array(text):
         print(f'JSON parse error: {e}')
         return None
 
-def parse_idea_response(response: str) -> list:
-    """Parse the LLM response to extract structured idea data"""
+def parse_idea_response(response: Optional[str]) -> list:
+    """Parse the LLM response to extract structured idea data. Handles JSON, Markdown, and numbered lists."""
+    if not response:
+        return []
+    # Try to extract a JSON array first
     ideas = extract_json_array(response)
-    if isinstance(ideas, list):
+    if isinstance(ideas, list) and ideas:
         return ideas
-    return []
+    # Fallback: split by '**Idea' or numbered headings
+    sections = re.split(r'\*\*Idea \d+|^Idea \d+|^\d+\. ', response, flags=re.MULTILINE)
+    parsed = []
+    for section in sections:
+        idea = parse_single_idea(section)
+        if idea:
+            parsed.append(idea)
+    return parsed
 
-def parse_single_idea(section: str) -> Dict[str, Any] | None:
+def parse_single_idea(section: Optional[str]) -> Dict[str, Any] | None:
     """Parse a single idea section"""
+    if not section:
+        return None
     idea = {
         "title": "",
         "hook": "",
@@ -190,8 +202,10 @@ def parse_single_idea(section: str) -> Dict[str, Any] | None:
         
     return idea
 
-def parse_deep_dive_response(response: str) -> dict:
+def parse_deep_dive_response(response: Optional[str]) -> dict:
     """Parse the deep dive LLM response into structured data"""
+    if not response:
+        return {}
     # Try to extract a JSON object or array from the response
     try:
         data = json.loads(response)
@@ -202,9 +216,9 @@ def parse_deep_dive_response(response: str) -> dict:
     except Exception:
         pass
     # Fallback: try to extract sections as before
-    logger.info(f"🔍 DEBUG: parse_deep_dive_response called with response length: {len(response)}")
-    logger.info(f"🔍 DEBUG: Response content: {response}")
-    
+    if response:
+        logger.info(f"🔍 DEBUG: parse_deep_dive_response called with response length: {len(response)}")
+        logger.info(f"🔍 DEBUG: Response content: {response}")
     deep_dive = {
         "product_clarity": {},
         "timing": {},
@@ -214,13 +228,10 @@ def parse_deep_dive_response(response: str) -> dict:
         "investor_scoring": {},
         "summary": ""
     }
-    
     current_section = None
     current_content = []
-    
-    lines = response.split('\n')
+    lines = response.split('\n') if response else []
     logger.info(f"🔍 DEBUG: Split into {len(lines)} lines")
-    
     for i, line in enumerate(lines):
         line = line.strip()
         if not line:
@@ -281,13 +292,17 @@ def parse_deep_dive_response(response: str) -> dict:
     logger.info(f"🔍 DEBUG: Final parsed deep_dive: {deep_dive}")
     return deep_dive
 
-def is_english(text: str) -> bool:
+def is_english(text: Optional[str]) -> bool:
     # Simple heuristic: if most characters are ASCII, assume English
+    if not text:
+        return False
     ascii_chars = sum(1 for c in text if ord(c) < 128)
     return ascii_chars / max(1, len(text)) > 0.85
 
-async def generate_idea_pitches(repo_description: str, user_skills: str = None) -> dict:
+async def generate_idea_pitches(repo_description: Optional[str], user_skills: str = None) -> dict:
     from prompts import IDEA_PROMPT
+    if not repo_description:
+        return {"raw": None, "ideas": [{"error": "No repo description provided."}]}
     skills_section = f"\n\nUser Skills and Experience:\n{user_skills}\n" if user_skills else ""
     prompt = f"{IDEA_PROMPT}{skills_section}\n\nRepository Description: {repo_description}\n\nGenerate 10 ideas:"
     try:
@@ -345,8 +360,9 @@ MVP Effort: {idea_data.get('mvp_effort', 5)}/10
             prompt_en = prompt + "\n\nPlease respond in English only."
             response = await call_groq(prompt_en)
         logger.error(f"🔍 DEBUG: Raw LLM response: {response}")
-        logger.error(f"🔍 DEBUG: Got response from Groq, length: {len(response)}")
-        logger.error(f"🔍 DEBUG: Response starts with: {response[:500]}...")
+        if response is not None:
+            logger.error(f"🔍 DEBUG: Got response from Groq, length: {len(response)}")
+            logger.error(f"🔍 DEBUG: Response starts with: {response[:500]}...")
         deep_dive = parse_deep_dive_response(response)
         logger.error(f"🔍 DEBUG: Parsed deep_dive result: {deep_dive}")
         return {"raw": response, "deep_dive": deep_dive}

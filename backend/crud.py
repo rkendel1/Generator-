@@ -1,9 +1,29 @@
 from sqlalchemy.orm import Session
 from models import Repo, Idea, Shortlist, DeepDiveVersion
 import logging
+from app.services.event_bus import EventBus
+from app.services.idea_service import IdeaService
+import json
+from app.schemas import IdeaOut
+import os
+from datetime import datetime
+try:
+    import redis
+except ImportError:
+    redis = None
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+event_bus = EventBus.get_instance()
+idea_service = IdeaService(event_bus)
+
+redis_client = None
+if redis:
+    try:
+        redis_client = redis.Redis.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379/0'))
+    except Exception:
+        redis_client = None
 
 def get_or_create_repo(db: Session, repo_data: dict):
     """Get or create a repository with error handling"""
@@ -42,14 +62,25 @@ def list_repos(db: Session, lang=None, search=None):
         raise
 
 def get_ideas_for_repo(db: Session, repo_id: str):
-    """Get ideas for a specific repository with error handling"""
+    """Get ideas for a specific repository with Redis caching (using IdeaOut for serialization)"""
     try:
         if not repo_id:
             raise ValueError("Repository ID is required")
-            
+        cache_key = f"ideas:repo:{repo_id}"
+        if redis_client:
+            cached = redis_client.get(cache_key)
+            if cached:
+                logger.debug(f"Cache hit for {cache_key}")
+                return [IdeaOut.model_validate(i) for i in json.loads(cached)]
         ideas = db.query(Idea).filter(Idea.repo_id == repo_id).all()
         logger.debug(f"Found {len(ideas)} ideas for repo {repo_id}")
-        return ideas
+        if redis_client:
+            def default_serializer(obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(f"Type {type(obj)} not serializable")
+            redis_client.setex(cache_key, 300, json.dumps([IdeaOut.model_validate(i).model_dump() for i in ideas], default=default_serializer))
+        return [IdeaOut.model_validate(i) for i in ideas]
     except Exception as e:
         logger.error(f"Error getting ideas for repo {repo_id}: {e}")
         raise
@@ -175,11 +206,5 @@ def restore_deep_dive_version(db: Session, idea_id: str, version_number: int):
     return idea
 
 def update_idea_status(db: Session, idea_id: str, new_status: str):
-    """Update the status of an idea."""
-    idea = db.query(Idea).filter(Idea.id == idea_id).first()
-    if not idea:
-        raise ValueError(f"Idea with ID {idea_id} not found")
-    idea.status = new_status
-    db.commit()
-    db.refresh(idea)
-    return idea
+    """Update the status of an idea using the event-driven service."""
+    return idea_service.update_status(db, idea_id, new_status)

@@ -1,10 +1,11 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Zap, Target, TrendingUp, Users, ArrowRight } from 'lucide-react';
+import { Zap, Target, TrendingUp, Users, ArrowRight, History, RefreshCw, Edit3, Star } from 'lucide-react';
 import React from 'react';
-import type { Idea, IdeaStatus } from '@/lib/api';
+import type { Idea, IdeaStatus, DeepDiveVersion, Repo } from '@/lib/api';
+import { Link } from 'react-router-dom';
 
 const statusOptions: { value: IdeaStatus; label: string }[] = [
   { value: 'suggested', label: 'Suggested' },
@@ -15,124 +16,135 @@ const statusOptions: { value: IdeaStatus; label: string }[] = [
 ];
 
 interface IdeaCardProps {
-  idea: Idea;
-  onDeepDive: (idea: Idea) => void;
-  onStatusChange: (id: string, newStatus: IdeaStatus) => void;
+  idea: Idea & { deep_dive_versions?: DeepDiveVersion[] };
+  onDeepDive?: (idea: Idea) => void;
+  onStatusChange?: (id: string, newStatus: IdeaStatus) => void;
+  onEdit?: (idea: Idea) => void;
+  onShortlist?: (id: string) => void;
+  onRestoreDeepDiveVersion?: (ideaId: string, versionNumber: number) => void;
+  repos?: Repo[];
+  showRepoSummary?: boolean;
+  showStatusDropdown?: boolean;
+  showStatusBadge?: boolean;
+  forceNewBadge?: boolean;
 }
 
-export function IdeaCard({ idea, onDeepDive, onStatusChange }: IdeaCardProps) {
+export function IdeaCard({
+  idea,
+  onDeepDive,
+  onStatusChange,
+  onEdit,
+  onShortlist,
+  onRestoreDeepDiveVersion,
+  repos = [],
+  showRepoSummary = true,
+  showStatusDropdown = true,
+  showStatusBadge = true,
+  forceNewBadge = false,
+}: IdeaCardProps) {
+  const [expanded, setExpanded] = React.useState(false);
   const getEffortColor = (effort: number) => {
-    if (effort <= 3) return 'bg-green-500';
-    if (effort <= 6) return 'bg-yellow-500';
-    return 'bg-red-500';
+    if (effort <= 3) return 'bg-green-100 text-green-800';
+    if (effort <= 6) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 8) return 'text-green-600';
-    if (score >= 6) return 'text-yellow-600';
-    return 'text-red-600';
+    if (score >= 8) return 'bg-green-100 text-green-800';
+    if (score >= 6) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
   };
 
+  // Helper for status badge
+  const statusBadge = (status: IdeaStatus) => {
+    const color = {
+      suggested: 'bg-blue-100 text-blue-800',
+      deep_dive: 'bg-purple-100 text-purple-800',
+      iterating: 'bg-yellow-100 text-yellow-800',
+      considering: 'bg-green-100 text-green-800',
+      closed: 'bg-gray-200 text-gray-600',
+    }[status];
+    return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>{statusOptions.find(s => s.value === status)?.label}</span>;
+  };
+
+  // Icon for source
+  const getSourceIcon = () => {
+    if (idea.repo_id) return <TrendingUp className="w-4 h-4 text-blue-500" />;
+    return <Zap className="w-4 h-4 text-orange-500" />;
+  };
+
+  const score = idea.score ?? 5;
+  const mvpEffort = idea.mvp_effort ?? 5;
+
+  // Lookup repo
+  const repo = repos.find(r => r.id === idea.repo_id);
+
+  // Format date
+  const createdAt = idea.created_at ? new Date(idea.created_at).toLocaleDateString() : '';
+
   return (
-    <Card className="transition-all duration-300 hover:shadow-lg group">
-      <CardHeader className="pb-4">
-        <div className="flex items-start justify-between mb-2">
-          <CardTitle className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
-            {idea.title}
-          </CardTitle>
-          <div className="flex gap-2">
-            <Badge variant="outline" className={getScoreColor(idea.score)}>
-              Score: {idea.score}/10
-            </Badge>
-            <Badge variant="outline" className="text-slate-600">
-              Effort: {idea.effort}/10
-            </Badge>
-          </div>
+    <div className="bg-white rounded-xl border border-slate-200 shadow p-4 mb-4 max-w-md">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {forceNewBadge ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700">
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.07-7.07l-1.41 1.41M6.34 17.66l-1.41 1.41m12.02 0l1.41-1.41M6.34 6.34L4.93 4.93" /></svg>
+              NEW!
+            </span>
+          ) : showStatusBadge && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+              <span className="mr-1"><svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.07-7.07l-1.41 1.41M6.34 17.66l-1.41 1.41m12.02 0l1.41-1.41M6.34 6.34L4.93 4.93" stroke="#888" strokeWidth="2" strokeLinecap="round"/></svg></span>
+              {statusOptions.find(s => s.value === idea.status)?.label || 'Suggested'}
+            </span>
+          )}
         </div>
-        
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-700">Effort Level:</span>
-            <div className="flex-1">
-              <Progress 
-                value={idea.effort * 10} 
-                className="h-2"
-                // @ts-ignore
-                style={{'--progress-background': getEffortColor(idea.effort)}}
-              />
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        {idea.isError && (
-          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-4">
-            <strong>LLM Parsing Error:</strong> The LLM response could not be parsed into ideas. See raw response below.<br />
-            <pre className="bg-slate-100 text-xs p-2 rounded overflow-x-auto max-h-40 whitespace-pre-wrap mt-2">{idea.llm_raw_response || 'No raw response available.'}</pre>
+        {showStatusDropdown && (
+          <div className="relative">
+            <button className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M12 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-5a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-5a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#888"/></svg>
+              <span>{statusOptions.find(s => s.value === idea.status)?.label || 'Suggested'}</span>
+            </button>
           </div>
         )}
-        <div className="space-y-3">
-          <div className="flex items-start gap-2">
-            <Zap className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <span className="font-medium text-sm text-slate-700">Hook:</span>
-              <p className="text-sm text-slate-600 mt-1">{idea.hook}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <Target className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <span className="font-medium text-sm text-slate-700">Value:</span>
-              <p className="text-sm text-slate-600 mt-1">{idea.value}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <TrendingUp className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <span className="font-medium text-sm text-slate-700">Evidence:</span>
-              <p className="text-sm text-slate-600 mt-1">{idea.evidence}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <Users className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <span className="font-medium text-sm text-slate-700">Differentiator:</span>
-              <p className="text-sm text-slate-600 mt-1">{idea.differentiator}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="pt-4 border-t">
-          <div className="flex items-center gap-2 mb-3">
-            <ArrowRight className="w-4 h-4 text-slate-500" />
-            <span className="font-medium text-sm text-slate-700">Call to Action:</span>
-          </div>
-          <p className="text-sm text-slate-600 mb-4">{idea.callToAction}</p>
-          
-          <Button 
-            onClick={() => onDeepDive(idea)}
-            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-          >
-            Request Deep Dive
-          </Button>
-        </div>
-      </CardContent>
-      <div className="mt-4 border-t pt-4">
-        <span className="font-medium text-sm text-slate-700">Status:</span>
-        <select
-          value={idea.status}
-          onChange={e => onStatusChange(idea.id, e.target.value as IdeaStatus)}
-          className="ml-4 border rounded px-2 py-1"
-        >
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
       </div>
-    </Card>
+      <div className="font-bold text-base text-slate-900 mb-3 leading-tight">
+        <Link to={`/idea/${idea.id}`} className="text-blue-700 hover:text-blue-900 underline">
+          {idea.title}
+        </Link>
+      </div>
+      {showRepoSummary && repo && repo.summary && repo.url && (
+        <div className="mb-2 text-slate-600 text-sm">
+          <a href={repo.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">{repo.summary}</a>
+        </div>
+      )}
+      <div className="flex gap-4 mb-2">
+        <div className="flex flex-col items-center justify-center">
+          <span className="text-xs text-slate-500 mb-1">Overall Score</span>
+          <span className="w-8 h-8 flex items-center justify-center rounded-lg text-lg font-bold bg-green-500 text-white">{score}</span>
+        </div>
+        <div className="flex flex-col items-center justify-center">
+          <span className="text-xs text-slate-500 mb-1">Effort Score</span>
+          <span className="w-8 h-8 flex items-center justify-center rounded-lg text-lg font-bold bg-yellow-400 text-white">{mvpEffort}</span>
+        </div>
+      </div>
+      <div className="border-t border-slate-100 pt-2 mt-2">
+        <button
+          className="w-full text-left text-slate-700 text-sm font-medium flex items-center gap-2 py-1 hover:underline"
+          onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
+        >
+          <span className="mr-1">{expanded ? '▼' : '▶'}</span> Elevator Pitch
+        </button>
+        {expanded && (
+          <div className="mt-2 space-y-2 text-slate-700 text-sm">
+            {idea.hook && <div>{idea.hook}</div>}
+            {idea.value && <div><span className="font-semibold">Value:</span> {idea.value}</div>}
+            {idea.evidence && <div><span className="font-semibold">Evidence:</span> {idea.evidence}</div>}
+            {idea.differentiator && <div><span className="font-semibold">Differentiator:</span> {idea.differentiator}</div>}
+            {idea.call_to_action && <div><span className="font-semibold">Call to Action:</span> {idea.call_to_action}</div>}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

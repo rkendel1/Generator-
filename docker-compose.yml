@@ -17,19 +17,27 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
   backend:
     build:
       context: ./backend
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
-      - GROQ_API_KEY_1=
-      - GROQ_API_KEY_2=
-      - GROQ_API_KEY_3=
+      - GROQ_API_KEY_1=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
+      - GROQ_API_KEY_2=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
+      - GROQ_API_KEY_3=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
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -60,14 +68,17 @@ services:
     command: ["python", "cron/nightly_runner.py"]
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/ideas
-      - GROQ_API_KEY_1=
-      - GROQ_API_KEY_2=
-      - GROQ_API_KEY_3=
+      - GROQ_API_KEY_1=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
+      - GROQ_API_KEY_2=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
+      - GROQ_API_KEY_3=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
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
       backend:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: "no"
 
 volumes:

@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, type ReactElement } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Star, Lightbulb, Target, TrendingUp, Users, ArrowRight, StickyNote, Save, Edit3, Rocket, Clock, Brain, Briefcase, BarChart } from 'lucide-react';
 import { IdeaCard } from "./IdeaCard";
-import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion, fetchIdeas, updateIdeaStatus, getAllIdeas } from "../lib/api";
-import type { IdeaStatus } from '../lib/api';
+import { getShortlist, addToShortlist, removeFromShortlist, getDeepDiveVersions, createDeepDiveVersion, restoreDeepDiveVersion, fetchIdeas, updateIdeaStatus, getAllIdeas, triggerDeepDive } from "../lib/api";
+import type { IdeaStatus, Idea, DeepDiveVersion, Repo } from '../lib/api';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import type { AxiosError } from 'axios';
+import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { useNavigate, Link } from "react-router-dom";
 
-const LIFECYCLE_STAGES: { key: string; label: string }[] = [
+export const LIFECYCLE_STAGES: { key: IdeaStatus; label: string }[] = [
   { key: 'suggested', label: 'Suggested' },
   { key: 'deep_dive', label: 'Deep Dive' },
   { key: 'iterating', label: 'Iterating' },
@@ -19,31 +24,42 @@ const LIFECYCLE_STAGES: { key: string; label: string }[] = [
 interface IdeaWorkspaceProps {
   repoId?: string; // Make optional to support showing all ideas
   showAllIdeas?: boolean; // New prop to show all ideas instead of just repo ideas
+  repos?: Repo[];
 }
 
-export function IdeaWorkspace({ repoId, showAllIdeas = false }: IdeaWorkspaceProps) {
-  const [ideas, setIdeas] = useState<any[]>([]);
+export function IdeaWorkspace({ repoId, showAllIdeas = false, repos = [] }: IdeaWorkspaceProps) {
+  const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeStage, setActiveStage] = useState<string>('suggested');
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Filter state
+  const [showManual, setShowManual] = useState(true);
+  const [showGenerated, setShowGenerated] = useState(true);
 
-  const [ideaNotes, setIdeaNotes] = useState<{[key: number]: string}>({});
-  const [editingNotes, setEditingNotes] = useState<{[key: number]: boolean}>({});
+  const [ideaNotes, setIdeaNotes] = useState<Record<number, string>>({});
+  const [editingNotes, setEditingNotes] = useState<Record<number, boolean>>({});
 
   // Shortlist state from backend
-  const [shortlist, setShortlist] = useState<any[]>([]);
+  const [shortlist, setShortlist] = useState<string[]>([]);
   const [shortlistLoading, setShortlistLoading] = useState(false);
 
-  const [editingDeepDive, setEditingDeepDive] = useState<{[ideaId: string]: any}>({});
-  const [versionHistory, setVersionHistory] = useState<{[ideaId: string]: any[]}>({});
+  const [editingDeepDive, setEditingDeepDive] = useState<Record<string, Record<string, string>>>({});
+  const [versionHistory, setVersionHistory] = useState<Record<string, DeepDiveVersion[]>>({});
   const [showVersionHistory, setShowVersionHistory] = useState<string | null>(null);
-  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionLoading, setVersionLoading] = useState<boolean>(false);
+
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (showAllIdeas) {
       // Fetch all ideas from all repos
       setLoading(true);
       getAllIdeas()
-        .then(setIdeas)
+        .then(fetchedIdeas => {
+          // Only keep ideas with a valid id
+          setIdeas(fetchedIdeas.filter(idea => idea && idea.id));
+        })
         .catch(error => {
           console.error('Error fetching all ideas:', error);
           setIdeas([]);
@@ -53,7 +69,9 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false }: IdeaWorkspacePro
       // Fetch ideas for specific repo
       setLoading(true);
       fetchIdeas(repoId)
-        .then(setIdeas)
+        .then(fetchedIdeas => {
+          setIdeas(fetchedIdeas.filter(idea => idea && idea.id));
+        })
         .catch(error => {
           console.error('Error fetching repo ideas:', error);
           setIdeas([]);
@@ -110,9 +128,9 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false }: IdeaWorkspacePro
     }));
   };
 
-  const handleSaveAndRerun = async (idea: any, rerun: boolean) => {
+  const handleSaveAndRerun = async (idea: Idea, rerun: boolean) => {
     setVersionLoading(true);
-    const fields = editingDeepDive[idea.id] || idea.deep_dive;
+    const fields: Record<string, string> = editingDeepDive[idea.id] || (idea.deep_dive as Record<string, string>);
     await createDeepDiveVersion(idea.id, fields, idea.deep_dive_raw_response || '');
     setEditingDeepDive(prev => ({ ...prev, [idea.id]: undefined }));
     setVersionLoading(false);
@@ -166,139 +184,180 @@ export function IdeaWorkspace({ repoId, showAllIdeas = false }: IdeaWorkspacePro
       setIdeas(prev =>
         prev.map(idea => (idea.id === id ? { ...idea, status: updated.status } : idea))
       );
-    } catch (err) {
-      alert('Failed to update status');
+    } catch (err: unknown) {
+      if (isAxios404Error(err)) {
+        alert('This idea no longer exists in the backend. It will be removed from the board.');
+        setIdeas(prev => prev.filter(idea => idea.id !== id));
+      } else {
+        alert('Failed to update status');
+      }
     }
   };
 
+  // Group ideas by status for kanban columns
+  const ideasByStatus: Record<IdeaStatus, Idea[]> = {
+    suggested: [],
+    deep_dive: [],
+    iterating: [],
+    considering: [],
+    closed: [],
+  };
+  (ideas || []).forEach(idea => {
+    if (showManual && !idea.repo_id) ideasByStatus[idea.status].push(idea);
+    else if (showGenerated && idea.repo_id) ideasByStatus[idea.status].push(idea);
+    else if (!idea.repo_id && !showManual) return;
+    else if (idea.repo_id && !showGenerated) return;
+  });
+  // Sort each column by best ideas (highest score, lowest effort)
+  Object.keys(ideasByStatus).forEach(status => {
+    ideasByStatus[status as IdeaStatus].sort((a, b) => {
+      const scoreA = a.score ?? 0;
+      const scoreB = b.score ?? 0;
+      const effortA = a.mvp_effort ?? 10;
+      const effortB = b.mvp_effort ?? 10;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return effortA - effortB;
+    });
+  });
+
+  // Drag and drop handler
+  const onDragEnd = async (result: DropResult) => {
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    const sourceStatus = source.droppableId as IdeaStatus;
+    const destStatus = destination.droppableId as IdeaStatus;
+    if (sourceStatus === destStatus && source.index === destination.index) return;
+    // Find the idea
+    const idea = ideasByStatus[sourceStatus].find(i => i.id === draggableId);
+    if (!idea) return;
+    // Debug log
+    console.log('Kanban move:', { id: idea.id, from: sourceStatus, to: destStatus });
+    // Optimistically update UI
+    setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, status: destStatus } : i));
+    try {
+      // Update status in backend
+      await updateIdeaStatus(idea.id, destStatus);
+      // If moved from suggested to deep_dive, trigger deep dive
+      if (sourceStatus === 'suggested' && destStatus === 'deep_dive') {
+        // Business logic: deep dive request is generated
+        toast({
+          title: 'Deep Dive Requested',
+          description: `Generating deep dive for "${idea.title}"...`,
+        });
+        await triggerDeepDive(idea.id);
+        setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
+        // Show toast when deep dive is completed
+        toast({
+          title: 'Deep Dive Ready',
+          description: `Deep dive for "${idea.title}" is complete!`,
+          action: (
+            <ToastAction altText="View Details" onClick={() => navigate(`/idea/${idea.id}`)}>
+              View Details
+            </ToastAction>
+          ),
+        });
+      } else if (destStatus === 'deep_dive') {
+        // If moved to deep_dive from another status, just trigger deep dive (no toast)
+        await triggerDeepDive(idea.id);
+        setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, deep_dive_requested: true } : i));
+      }
+    } catch (err) {
+      // Revert on error
+      setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, status: sourceStatus } : i));
+      toast({
+        title: 'Failed to update status or trigger deep dive.',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  function isAxios404Error(err: unknown): err is AxiosError {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      'response' in err &&
+      (err as AxiosError).response !== undefined &&
+      (err as AxiosError).response?.status === 404
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex mb-4">
-        {LIFECYCLE_STAGES.map(stage => (
-          <button
-            key={stage.key}
-            className={`px-4 py-2 mr-2 rounded ${activeStage === stage.key ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-            onClick={() => setActiveStage(stage.key)}
-          >
-            {stage.label}
-          </button>
-        ))}
+      {/* Filter controls */}
+      <div className="flex gap-4 mb-4">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={showManual} onChange={e => setShowManual(e.target.checked)} />
+          Manual Ideas
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={showGenerated} onChange={e => setShowGenerated(e.target.checked)} />
+          Generated Ideas
+        </label>
+        {/* Add more filters here as needed */}
       </div>
       {loading ? (
         <div>Loading ideas...</div>
       ) : (
-        <div>
-          {!ideas || ideas.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              No ideas found for {activeStage} stage.
+        <DragDropContext onDragEnd={onDragEnd}>
+          <div className="overflow-x-auto">
+            <div className="flex gap-2 w-full">
+              {LIFECYCLE_STAGES.map(stage => (
+                <Droppable droppableId={stage.key} key={stage.key}>
+                  {(provided, snapshot): ReactElement => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`flex-1 flex-shrink flex-grow min-w-0 bg-slate-100 rounded-xl border border-slate-200 shadow-sm p-2 flex flex-col max-h-[80vh] ${snapshot.isDraggingOver ? 'bg-blue-50' : ''}`}
+                      style={{ flexBasis: 0 }}
+                    >
+                      <div className="flex items-center justify-between mb-2 text-xs font-semibold text-slate-700">
+                        <span>{stage.label}</span>
+                        <span className="bg-slate-300 text-xs rounded px-2 py-0.5">{ideasByStatus[stage.key].length}</span>
+                        <button className="ml-2 text-blue-500 hover:text-blue-700 text-base font-bold">+</button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto space-y-2">
+                        {ideasByStatus[stage.key].length === 0 ? (
+                          <div className="text-slate-400 text-xs text-center py-2">No ideas</div>
+                        ) : (
+                          ideasByStatus[stage.key].map((idea, idx) => (
+                            <Draggable
+                              key={idea.id}
+                              draggableId={idea.id}
+                              index={idx}
+                              isDragDisabled={idea.status === 'closed'}
+                            >
+                              {(provided, snapshot): ReactElement => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={`bg-white rounded-lg shadow border border-slate-200 p-2 flex flex-col gap-2 ${snapshot.isDragging ? 'ring-2 ring-blue-400' : ''}`}
+                                  style={{ marginBottom: '0.25rem' }}
+                                >
+                                  <IdeaCard
+                                    idea={idea}
+                                    onDeepDive={() => {}}
+                                    onStatusChange={handleStatusChange}
+                                    repos={repos}
+                                    showStatusBadge={true}
+                                    showStatusDropdown={true}
+                                    showDetails={true}
+                                  />
+                                </div>
+                              )}
+                            </Draggable>
+                          ))
+                        )}
+                        {provided.placeholder}
+                      </div>
+                    </div>
+                  )}
+                </Droppable>
+              ))}
             </div>
-          ) : (
-            (ideas || [])
-              .filter(idea => {
-                try {
-                  return idea && idea.status === activeStage;
-                } catch (error) {
-                  console.error('Error filtering idea:', error, idea);
-                  return false;
-                }
-              })
-              .map((idea, index) => {
-                try {
-                  return (
-                    <Card key={idea?.id || index} className="transition-all duration-300 hover:shadow-lg mb-4">
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                              #{index + 1}
-                            </span>
-                            {idea?.title || 'Untitled Idea'}
-                          </CardTitle>
-                          <div className="flex gap-2">
-                            <Badge className={getScoreColor(idea?.score || 5)}>
-                              Score: {idea?.score || 5}/10
-                            </Badge>
-                            <Badge className="text-slate-600">
-                              Effort: {idea?.mvp_effort || 5}/10
-                            </Badge>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-3">
-                            <div className="flex items-start gap-2">
-                              <Lightbulb className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium text-sm text-slate-700">Hook:</span>
-                                <p className="text-sm text-slate-600 mt-1">{idea?.hook || 'No hook available'}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-start gap-2">
-                              <Target className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium text-sm text-slate-700">Value:</span>
-                                <p className="text-sm text-slate-600 mt-1">{idea?.value || 'No value available'}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-start gap-2">
-                              <TrendingUp className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium text-sm text-slate-700">Evidence:</span>
-                                <p className="text-sm text-slate-600 mt-1">{idea?.evidence || 'No evidence available'}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-start gap-2">
-                              <Users className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium text-sm text-slate-700">Differentiator:</span>
-                                <p className="text-sm text-slate-600 mt-1">{idea?.differentiator || 'No differentiator available'}</p>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="space-y-3">
-                            <div className="flex items-start gap-2">
-                              <ArrowRight className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium text-sm text-slate-700">Call to Action:</span>
-                                <p className="text-sm text-slate-600 mt-1">{idea?.call_to_action || 'No call to action available'}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Status Management */}
-                        <div className="border-t pt-4">
-                          <span className="font-medium text-sm text-slate-700">Status:</span>
-                          <select
-                            value={idea?.status || 'suggested'}
-                            onChange={e => handleStatusChange(idea?.id, e.target.value as IdeaStatus)}
-                            className="ml-4 border rounded px-2 py-1"
-                          >
-                            {LIFECYCLE_STAGES.map(opt => (
-                              <option key={opt.key} value={opt.key}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                } catch (error) {
-                  console.error('Error rendering idea:', error, idea);
-                  return (
-                    <Card key={`error-${index}`} className="mb-4 border-red-200 bg-red-50">
-                      <CardContent className="p-4">
-                        <p className="text-red-600">Error rendering idea: {error.message}</p>
-                        <pre className="text-xs mt-2 bg-red-100 p-2 rounded overflow-auto">
-                          {JSON.stringify(idea, null, 2)}
-                        </pre>
-                      </CardContent>
-                    </Card>
-                  );
-                }
-              })
-          )}
-        </div>
+          </div>
+        </DragDropContext>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 from crud import get_ideas_for_repo, request_deep_dive, save_deep_dive, add_to_shortlist, remove_from_shortlist, get_shortlist_ideas, create_deep_dive_version, get_deep_dive_versions, get_deep_dive_version, restore_deep_dive_version, update_idea_status
 from app.schemas import IdeaOut, ShortlistOut, DeepDiveVersionOut
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from llm import generate_deep_dive
@@ -141,4 +141,45 @@ async def generate_adhoc_ideas(
         ideas.append(db_idea)
     
     from app.schemas import IdeaOut
-    return {"ideas": [IdeaOut.model_validate(i) for i in ideas]} 
+    return {"ideas": [IdeaOut.model_validate(i) for i in ideas]}
+
+@router.get("/{idea_id}", response_model=IdeaOut)
+def get_idea_by_id(idea_id: str, db: Session = Depends(get_db)):
+    idea = db.query(Idea).filter(Idea.id == idea_id).first()
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return idea
+
+@router.post("/", response_model=IdeaOut)
+def create_idea(
+    title: str = Body(...),
+    hook: Optional[str] = Body(None),
+    value: Optional[str] = Body(None),
+    evidence: Optional[str] = Body(None),
+    differentiator: Optional[str] = Body(None),
+    call_to_action: Optional[str] = Body(None),
+    score: Optional[int] = Body(None),
+    mvp_effort: Optional[int] = Body(None),
+    status: str = Body("suggested"),
+    repo_id: Optional[str] = Body(None),
+    db: Session = Depends(get_db)
+):
+    # Validate required fields
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    idea = Idea(
+        title=title,
+        hook=hook,
+        value=value,
+        evidence=evidence,
+        differentiator=differentiator,
+        call_to_action=call_to_action,
+        score=score,
+        mvp_effort=mvp_effort,
+        status=status,
+        repo_id=repo_id
+    )
+    db.add(idea)
+    db.commit()
+    db.refresh(idea)
+    return idea 
