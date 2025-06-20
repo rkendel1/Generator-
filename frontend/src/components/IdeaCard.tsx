@@ -6,6 +6,7 @@ import { Zap, Target, TrendingUp, Users, ArrowRight, History, RefreshCw, Edit3, 
 import React from 'react';
 import type { Idea, IdeaStatus, DeepDiveVersion, Repo } from '@/lib/api';
 import { Link } from 'react-router-dom';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 const statusOptions: { value: IdeaStatus; label: string }[] = [
   { value: 'suggested', label: 'Suggested' },
@@ -27,6 +28,7 @@ interface IdeaCardProps {
   showStatusDropdown?: boolean;
   showStatusBadge?: boolean;
   forceNewBadge?: boolean;
+  hideDetailsAccordion?: boolean;
 }
 
 export function IdeaCard({
@@ -41,6 +43,7 @@ export function IdeaCard({
   showStatusDropdown = true,
   showStatusBadge = true,
   forceNewBadge = false,
+  hideDetailsAccordion = false,
 }: IdeaCardProps) {
   const [expanded, setExpanded] = React.useState(false);
   const getEffortColor = (effort: number) => {
@@ -91,10 +94,10 @@ export function IdeaCard({
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.07-7.07l-1.41 1.41M6.34 17.66l-1.41 1.41m12.02 0l1.41-1.41M6.34 6.34L4.93 4.93" /></svg>
               NEW!
             </span>
-          ) : showStatusBadge && (
+          ) : showStatusBadge && idea.status !== 'suggested' && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
               <span className="mr-1"><svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.07-7.07l-1.41 1.41M6.34 17.66l-1.41 1.41m12.02 0l1.41-1.41M6.34 6.34L4.93 4.93" stroke="#888" strokeWidth="2" strokeLinecap="round"/></svg></span>
-              {statusOptions.find(s => s.value === idea.status)?.label || 'Suggested'}
+              {statusOptions.find(s => s.value === idea.status)?.label}
             </span>
           )}
         </div>
@@ -107,8 +110,8 @@ export function IdeaCard({
           </div>
         )}
       </div>
-      <div className="font-bold text-base text-slate-900 mb-3 leading-tight">
-        <Link to={`/idea/${idea.id}`} className="text-blue-700 hover:text-blue-900 underline">
+      <div className="flex flex-row items-center gap-2">
+        <Link to={`/ideas/${idea.id}`} className="text-blue-600 hover:underline font-semibold text-lg">
           {idea.title}
         </Link>
       </div>

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Star, GitFork, Eye, TrendingUp, Lightbulb, Target, Clock, DollarSign, Rocket } from 'lucide-react';
+import { Star, GitFork, Eye, TrendingUp, Lightbulb, Target, Clock, DollarSign, Rocket, Loader2, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 import { RepoCard } from "@/components/RepoCard";
 import { IdeaWorkspace } from "@/components/IdeaWorkspace";
 import { Dashboard } from "@/components/Dashboard";
@@ -29,6 +29,7 @@ const Index = () => {
   const [pollingDeepDiveId, setPollingDeepDiveId] = useState<string | null>(null);
   const [pollingTimeout, setPollingTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState('new');
+  const [repoStatus, setRepoStatus] = useState({}); // { [repoId]: { status: 'idle'|'loading'|'success'|'error', error?: string } }
 
   // Fetch repositories from API
   useEffect(() => {
@@ -59,16 +60,21 @@ const Index = () => {
   useEffect(() => {
     const fetchAllIdeas = async () => {
       if (currentRepos.length === 0) return;
-      
       const ideasMap = {};
+      const statusMap = {};
       for (const repo of currentRepos) {
+        statusMap[repo.id] = { status: 'loading' };
+        setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'loading' } }));
         try {
           const ideas = await getIdeas(repo.id);
-          // Only keep ideas with a valid id
           ideasMap[repo.id] = ideas.filter(idea => idea && idea.id).map(transformIdea);
+          statusMap[repo.id] = { status: 'success' };
+          setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'success' } }));
         } catch (err) {
           console.error(`Error fetching ideas for repo ${repo.id}:`, err);
           ideasMap[repo.id] = [];
+          statusMap[repo.id] = { status: 'error', error: err?.message || 'Failed to fetch ideas' };
+          setRepoStatus(prev => ({ ...prev, [repo.id]: { status: 'error', error: err?.message || 'Failed to fetch ideas' } }));
         }
       }
       setAllRepoIdeas(ideasMap);
@@ -124,6 +130,14 @@ const Index = () => {
     setTimeout(() => {
       setActiveTab('workspace');
     }, 100); // Switch to workspace after a short delay
+  };
+
+  // Helper to determine if an idea is new (created within last 24 hours)
+  const isNewIdea = (idea: Idea) => {
+    if (!idea.created_at) return false;
+    const created = new Date(idea.created_at).getTime();
+    const now = Date.now();
+    return now - created < 24 * 60 * 60 * 1000;
   };
 
   if (loading) {
@@ -184,7 +198,7 @@ const Index = () => {
 
           <TabsContent value="new" className="space-y-6">
             <div className="overflow-x-auto">
-              <div className="flex gap-4 min-w-[1500px]">
+              <div className="flex gap-2 w-full">
                 {(() => {
                   // Gather all ideas, sort by created_at desc, take 20
                   const allIdeas = Object.values(allRepoIdeas).flat() as Idea[];
@@ -211,41 +225,65 @@ const Index = () => {
                   // Take up to 5 groups/columns
                   return Object.entries(groups).slice(0, 5).map(([repoId, ideas]) => {
                     const repo = currentRepos.find(r => r.id === repoId);
+                    const status = repoStatus[repoId]?.status || 'idle';
+                    const errorMsg = repoStatus[repoId]?.error;
                     return (
-                      <div key={repoId} className="flex-1 min-w-[300px] bg-slate-100 rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col max-h-[80vh]">
-                        <div className="mb-2 text-xl font-semibold text-slate-700">{getRepoName(repoId)}</div>
-                        {repo && repo.summary && repo.url && (
-                          <div className="mb-2 text-slate-600 text-sm">
-                            <a href={repo.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">{repo.summary}</a>
+                      <div key={repoId} className="flex-1 flex-shrink flex-grow min-w-0 bg-slate-100 rounded-xl border border-slate-200 shadow-sm p-2 flex flex-col max-h-[80vh] transition-colors duration-200">
+                        {/* Repo group header */}
+                        <div className="mb-2 flex flex-col gap-1">
+                          <div className="flex items-center justify-between min-w-0 w-full">
+                            {repo ? (
+                              <>
+                                <a
+                                  href={repo.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-700 hover:text-blue-900 font-semibold text-base truncate max-w-[120px]"
+                                  title={repo.name}
+                                >
+                                  {repo.name}
+                                </a>
+                                {repo.language && (
+                                  <span className="px-2 py-0.5 rounded bg-blue-200 text-blue-900 text-xs font-semibold whitespace-nowrap ml-2">{repo.language}</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-slate-700 font-semibold text-base">Manual/Generated Ideas</span>
+                            )}
                           </div>
-                        )}
-                        {(!repo || !repo.summary) && repoId === 'manual' && (
-                          <div className="mb-2 text-slate-500 text-sm italic">Ideas generated manually or by AI</div>
-                        )}
-                        <div className="flex-1 overflow-y-auto space-y-4">
+                          {repo && repo.summary && (
+                            <div className="text-slate-700 text-sm leading-snug mt-1" title={repo.summary}>{repo.summary}</div>
+                          )}
+                          {(!repo || !repo.summary) && repoId === 'manual' && (
+                            <div className="text-slate-500 text-sm italic">Ideas generated manually or by AI</div>
+                          )}
+                        </div>
+                        {/* End repo group header */}
+                        <div className="flex-1 overflow-y-auto space-y-2">
                           {ideas.map(idea => (
-                            <IdeaCard
-                              key={idea.id}
-                              idea={idea}
-                              onDeepDive={() => triggerDeepDive(idea.id)}
-                              onStatusChange={async (id, newStatus) => {
-                                if (newStatus === idea.status) return;
-                                try {
-                                  await updateIdeaStatus(id, newStatus);
-                                  if (idea.status === 'suggested' && newStatus === 'deep_dive') {
-                                    await triggerDeepDive(id);
+                            <div key={idea.id} className="mb-2">
+                              <IdeaCard
+                                idea={idea}
+                                onDeepDive={() => triggerDeepDive(idea.id)}
+                                onStatusChange={async (id, newStatus) => {
+                                  if (newStatus === idea.status) return;
+                                  try {
+                                    await updateIdeaStatus(id, newStatus);
+                                    if (idea.status === 'suggested' && newStatus === 'deep_dive') {
+                                      await triggerDeepDive(id);
+                                    }
+                                    await refetchIdeasForRepo((idea as Idea).repo_id);
+                                  } catch (err) {
+                                    alert('Failed to update status');
                                   }
-                                  await refetchIdeasForRepo((idea as Idea).repo_id);
-                                } catch (err) {
-                                  alert('Failed to update status');
-                                }
-                              }}
-                              repos={currentRepos}
-                              showRepoSummary={true}
-                              showStatusDropdown={false}
-                              showStatusBadge={false}
-                              forceNewBadge={true}
-                            />
+                                }}
+                                repos={currentRepos}
+                                showRepoSummary={false}
+                                showStatusDropdown={false}
+                                showStatusBadge={false}
+                                forceNewBadge={isNewIdea(idea)}
+                              />
+                            </div>
                           ))}
                         </div>
                       </div>

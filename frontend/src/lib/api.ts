@@ -269,11 +269,8 @@ export async function fetchIdeas(repoId: string): Promise<Idea[]> {
 }
 
 export async function updateIdeaStatus(id: string, status: IdeaStatus): Promise<Idea> {
-  const res = await fetch(`/ideas/${id}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
+  const response = await api.post(`/ideas/${id}/status`, JSON.stringify(status), {
+    headers: { 'Content-Type': 'application/json' }
   });
-  if (!res.ok) throw new Error('Failed to update status');
-  return res.json();
+  return response.data;
 } 

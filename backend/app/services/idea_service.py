@@ -29,20 +29,19 @@ class IdeaService:
         db.refresh(idea)
         self.logger.info(f"Updated status for idea {idea_id} to {new_status}")
         # Emit event
-        self.event_bus.emit('idea.status.updated', idea_id=idea_id, new_status=new_status, db=db)
+        self.event_bus.emit('idea.status.updated', idea_id=idea_id, new_status=new_status)
         return idea
 
-    def _on_status_updated(self, idea_id, new_status, db, **kwargs):
+    def _on_status_updated(self, idea_id, new_status, **kwargs):
         self.logger.info(f"Event received: idea.status.updated for {idea_id} -> {new_status}")
-        idea = db.query(Idea).filter(Idea.id == idea_id).first()
-        if not idea:
-            return
+        # If you need db here, you must obtain it another way (e.g., via dependency injection or context)
+        # The rest of this handler may need refactoring if it relies on db
         # Invalidate cache for this repo's ideas
-        if redis_client and idea.repo_id:
-            cache_key = f"ideas:repo:{idea.repo_id}"
+        if redis_client and kwargs.get('repo_id'):
+            cache_key = f"ideas:repo:{kwargs['repo_id']}"
             redis_client.delete(cache_key)
             self.logger.info(f"Invalidated cache for {cache_key}")
         if new_status == 'deep_dive':
             self.logger.info(f"Triggering deep dive for idea {idea_id} due to status change.")
             from crud import request_deep_dive
-            request_deep_dive(db, idea_id) 
+            request_deep_dive(kwargs.get('db'), idea_id) 
